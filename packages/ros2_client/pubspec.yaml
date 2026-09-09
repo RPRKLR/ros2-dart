@@ -1,0 +1,25 @@
+name: ros2_client
+description: A type-safe, streaming ROS 2 client for Dart and Flutter. Topics, services, actions, parameters and introspection over rosbridge.
+version: 0.1.0
+
+topics:
+  - ros
+  - ros2
+  - robotics
+  - rosbridge
+  - websocket
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  async: ^2.11.0
+  cbor: ^6.5.1
+  collection: ^1.18.0
+  meta: ^1.15.0
+  typed_data: ^1.4.0
+  web_socket_channel: ^3.0.0
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.25.0

@@ -1,0 +1,4 @@
+tags:
+  # End-to-end tests that spawn a local Python (Tornado) WebSocket server.
+  # They skip themselves automatically if python3 or tornado is unavailable.
+  integration:

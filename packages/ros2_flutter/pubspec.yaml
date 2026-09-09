@@ -1,0 +1,32 @@
+name: ros2_flutter
+description: Flutter widgets for ROS 2 — connection lifecycle, camera views, laser scan rendering and a teleop joystick, built on ros2_client.
+version: 0.1.0
+
+topics:
+  - ros
+  - ros2
+  - robotics
+  - teleop
+  - widgets
+
+environment:
+  sdk: ^3.6.0
+  flutter: '>=3.24.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Before publishing, replace the path override with a version constraint:
+  #   ros2_client: ^0.1.0
+  ros2_client: ^0.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+# Local development uses the sibling package; pub.dev resolves the version
+# constraint above instead, so this block is ignored on publish.
+dependency_overrides:
+  ros2_client:
+    path: ../ros2_client
