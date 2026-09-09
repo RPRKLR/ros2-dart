@@ -63,8 +63,12 @@ abstract final class DartEmitter {
   };
 
   /// The Dart class name for a ROS type name.
+  ///
+  /// Service and action parts arrive as `AddTwoInts_Request`; ROS type names
+  /// are otherwise PascalCase with no underscores, so stripping them is safe
+  /// and yields `AddTwoIntsRequest`.
   static String className(String rosTypeName) {
-    final short = rosTypeName.split('/').last;
+    final short = rosTypeName.split('/').last.replaceAll('_', '');
     return reservedTypeNames[short] ?? short;
   }
 

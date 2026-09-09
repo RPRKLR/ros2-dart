@@ -198,6 +198,78 @@ int32 x
     });
   });
 
+  group('writer: services and actions', () {
+    String emitService(String source, {String name = 'AddTwoInts'}) =>
+        LibraryWriter(
+          package: 'example_interfaces',
+          messages: const [],
+          services: [
+            InterfaceParser.parseService(source,
+                package: 'example_interfaces', name: name),
+          ],
+        ).write();
+
+    test('emits request and response classes plus a ServiceCodec', () {
+      final code = emitService('int64 a\nint64 b\n---\nint64 sum\n');
+      expect(code, contains('final class AddTwoIntsRequest'));
+      expect(code, contains('final class AddTwoIntsResponse'));
+      expect(code, contains('ServiceRegistry.register'));
+      expect(code,
+          contains('ServiceCodec<AddTwoIntsRequest, AddTwoIntsResponse>'));
+      expect(
+          code, contains("serviceType: 'example_interfaces/srv/AddTwoInts'"));
+    });
+
+    test('drops the underscore from synthesised part names', () {
+      // The parser names parts `AddTwoInts_Request`; `AddTwoInts_Request` is
+      // not idiomatic Dart.
+      expect(DartEmitter.className('pkg/srv/AddTwoInts_Request'),
+          'AddTwoIntsRequest');
+      expect(DartEmitter.className('pkg/action/Fibonacci_Feedback'),
+          'FibonacciFeedback');
+    });
+
+    test('emits goal, result and feedback classes plus an ActionCodec', () {
+      final code = LibraryWriter(
+        package: 'turtlesim',
+        messages: const [],
+        actions: [
+          InterfaceParser.parseAction(
+            'float32 theta\n---\nfloat32 delta\n---\nfloat32 remaining\n',
+            package: 'turtlesim',
+            name: 'RotateAbsolute',
+          ),
+        ],
+      ).write();
+
+      expect(code, contains('final class RotateAbsoluteGoal'));
+      expect(code, contains('final class RotateAbsoluteResult'));
+      expect(code, contains('final class RotateAbsoluteFeedback'));
+      // Order matters: ActionCodec is <Goal, Feedback, Result>.
+      expect(
+          code,
+          contains('ActionCodec<RotateAbsoluteGoal, RotateAbsoluteFeedback, '
+              'RotateAbsoluteResult>'));
+      expect(code, contains("actionType: 'turtlesim/action/RotateAbsolute'"));
+    });
+
+    test('service parts contribute to dependency analysis', () {
+      final writer = LibraryWriter(
+        package: 'nav_msgs',
+        messages: const [],
+        services: [
+          InterfaceParser.parseService(
+            'string map_url\n---\nnav_msgs/OccupancyGrid map\n'
+            'builtin_interfaces/Time stamp\n',
+            package: 'nav_msgs',
+            name: 'LoadMap',
+          ),
+        ],
+      );
+      expect(writer.referencedPackages, contains('builtin_interfaces'));
+    });
+  });
+
   group('writer: generated source', () {
     String emit(String source, {String pkg = 'test_msgs', String name = 'T'}) =>
         LibraryWriter(

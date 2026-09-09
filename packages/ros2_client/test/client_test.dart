@@ -238,6 +238,39 @@ void main() {
       );
     });
 
+    test('a goal with no reply fails once its timeout elapses', () async {
+      await connect();
+      // A goal sent to an action server that does not exist gets no reply at
+      // all, so without a timeout this future never completes.
+      final handle = ros.sendGoal<_Goal, int, String>(
+        '/nonexistent',
+        _Goal(1),
+        codec: codec,
+        timeout: const Duration(milliseconds: 30),
+      );
+
+      await expectLater(
+        handle.result,
+        throwsA(isA<ActionFailedException>()
+            .having((e) => e.message, 'message', contains('No result'))),
+      );
+    });
+
+    test('a goal that completes in time is unaffected by its timeout',
+        () async {
+      await connect();
+      final handle = ros.sendGoal<_Goal, int, String>(
+        '/fib',
+        _Goal(1),
+        codec: codec,
+        timeout: const Duration(seconds: 5),
+      );
+      await pump();
+      bridge.sendResult({'sequence': 'ok'});
+
+      expect(await handle.result, 'ok');
+    });
+
     test('cancel sends cancel_action_goal with the goal id', () async {
       await connect();
       final handle =

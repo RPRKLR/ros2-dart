@@ -3,17 +3,32 @@ import 'interface_def.dart';
 
 /// Renders parsed interfaces into a Dart library.
 final class LibraryWriter {
-  LibraryWriter({required this.package, required this.messages});
+  LibraryWriter({
+    required this.package,
+    required this.messages,
+    this.services = const [],
+    this.actions = const [],
+  });
 
   /// The ROS package these messages belong to, e.g. `sensor_msgs`.
   final String package;
   final List<MessageDef> messages;
+  final List<ServiceDef> services;
+  final List<ActionDef> actions;
+
+  /// Every message body in this library, including the request/response and
+  /// goal/result/feedback parts synthesised from services and actions.
+  List<MessageDef> get _allMessages => [
+        ...messages,
+        for (final s in services) ...[s.request, s.response],
+        for (final a in actions) ...[a.goal, a.result, a.feedback],
+      ];
 
   /// Emits the complete `.dart` source for [package].
   String write() {
     final buffer = StringBuffer();
     _writeHeader(buffer);
-    for (final message in messages) {
+    for (final message in _allMessages) {
       _writeMessage(buffer, message);
     }
     _writeRegistration(buffer);
@@ -45,12 +60,12 @@ final class LibraryWriter {
   }
 
   /// True when any field maps to a `dart:typed_data` list.
-  bool get _usesTypedData => messages.any((m) => m.fields
+  bool get _usesTypedData => _allMessages.any((m) => m.fields
       .any((f) => f.isArray && DartEmitter.typedListFor(f.type) != null));
 
   /// True when any field is a list, so `==` needs element-wise comparison.
   bool get _usesListEquals =>
-      messages.any((m) => m.fields.any((f) => f.isArray));
+      _allMessages.any((m) => m.fields.any((f) => f.isArray));
 
   /// Packages referenced by these messages, excluding this one and the types
   /// bundled with the client. Used by the CLI to pull in transitive deps.
@@ -59,7 +74,7 @@ final class LibraryWriter {
   /// Other generated libraries this one references.
   List<String> _externalPackages() {
     final deps = <String>{};
-    for (final message in messages) {
+    for (final message in _allMessages) {
       for (final field in message.fields) {
         if (DartEmitter.scalarDartType(field.type) != null) continue;
         final parts = field.type.split('/');
@@ -249,13 +264,39 @@ final class LibraryWriter {
       ..writeln(
           '/// Call once at startup, before the first subscribe or advertise.')
       ..writeln('void register${_pascal(package)}() {');
-    for (final message in messages) {
+    for (final message in _allMessages) {
       final name = DartEmitter.className(message.name);
       out
         ..writeln('  MessageRegistry.register(const MessageCodec<$name>(')
         ..writeln("    rosType: '${message.package}/msg/${message.name}',")
         ..writeln('    fromJson: $name.fromJson,')
         ..writeln('    toJson: _toJson,')
+        ..writeln('  ));');
+    }
+    for (final service in services) {
+      final req = DartEmitter.className(service.request.name);
+      final res = DartEmitter.className(service.response.name);
+      out
+        ..writeln('  ServiceRegistry.register(')
+        ..writeln('      const ServiceCodec<$req, $res>(')
+        ..writeln("    serviceType: '${service.rosType}',")
+        ..writeln('    encodeRequest: _toJson,')
+        ..writeln('    decodeResponse: $res.fromJson,')
+        ..writeln('    decodeRequest: $req.fromJson,')
+        ..writeln('    encodeResponse: _toJson,')
+        ..writeln('  ));');
+    }
+    for (final action in actions) {
+      final goal = DartEmitter.className(action.goal.name);
+      final result = DartEmitter.className(action.result.name);
+      final feedback = DartEmitter.className(action.feedback.name);
+      out
+        ..writeln('  ActionRegistry.register(')
+        ..writeln('      const ActionCodec<$goal, $feedback, $result>(')
+        ..writeln("    actionType: '${action.rosType}',")
+        ..writeln('    encodeGoal: _toJson,')
+        ..writeln('    decodeFeedback: $feedback.fromJson,')
+        ..writeln('    decodeResult: $result.fromJson,')
         ..writeln('  ));');
     }
     out

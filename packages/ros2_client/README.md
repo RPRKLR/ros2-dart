@@ -153,11 +153,12 @@ Commands published while offline are buffered and replayed.
 
 ## Code generation
 
-Generate Dart classes for any ROS package, including your own:
+Generate Dart classes for any ROS package's `.msg`, `.srv` and `.action`
+definitions, including your own:
 
 ```bash
 source /opt/ros/humble/setup.bash
-dart run ros2_client:generate -o lib/msgs sensor_msgs my_robot_msgs
+dart run ros2_client:generate -o lib/msgs sensor_msgs nav2_msgs my_robot_msgs
 ```
 
 Then register them once at startup:
@@ -181,12 +182,32 @@ a workspace:
 dart run ros2_client:generate -s ~/ws/install -o lib/msgs my_robot_msgs
 ```
 
+Services and actions become fully typed, with no hand-written codecs:
+
+```dart
+final sum = await ros.callService<AddTwoIntsRequest, AddTwoIntsResponse>(
+  '/add_two_ints', const AddTwoIntsRequest(a: 20, b: 22));
+
+final goal = ros.sendGoal<NavigateToPoseGoal, NavigateToPoseFeedback,
+    NavigateToPoseResult>('/navigate_to_pose', myGoal);
+goal.feedback.listen((f) => print('${f.distanceRemaining} m to go'));
+await goal.result;
+```
+
+The codec is resolved from the request or goal type alone, so there are no
+type strings at the call site.
+
 Generated code handles bounded/fixed arrays, constants, nested messages,
 and the naming hazards: `sensor_msgs/Image` becomes `RosImage` to avoid
 `material.dart`, and a constant clashing with a field (`int32 POINTS=8`
 alongside `Point[] points` in `Marker`) becomes `pointsConst`.
 
-Verified on 136 messages across 12 real ROS packages.
+The barrel registers everything but deliberately re-exports nothing: ROS
+reuses type names across packages (`geometry_msgs/Pose` and
+`turtlesim/Pose`), so import the specific library you need.
+
+Verified on 136 messages across 12 real ROS packages, plus nav2_msgs'
+11 services and 15 actions.
 
 ## Hand-written messages
 

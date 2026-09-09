@@ -37,6 +37,7 @@ final class GoalHandle<Feedback, Result> {
 
   final StreamController<Feedback> _feedback;
   final Completer<Result> _result;
+  Timer? _timeoutTimer;
 
   /// Feedback published while the goal runs. Closes when the goal finishes.
   Stream<Feedback> get feedback => _feedback.stream;
@@ -51,6 +52,7 @@ final class GoalHandle<Feedback, Result> {
   /// await [result] and catch [ActionFailedException] to observe the outcome.
   void cancel() {
     if (isDone) return;
+    _timeoutTimer?.cancel();
     _client._send({
       'op': Op.cancelActionGoal,
       'id': goalId,
@@ -475,10 +477,16 @@ final class Ros2Client {
   ///
   /// Requires `rosbridge_suite` >= 2.0.0 on the robot; earlier versions reject
   /// `send_action_goal` with an "Unknown operation" status.
+  /// A goal sent to an action server that does not exist gets no reply of any
+  /// kind — rosbridge does not report unroutable goals — so [timeout] is the
+  /// only thing standing between that and a future that never completes.
+  /// It defaults to `null` because real goals legitimately run for minutes;
+  /// set it for anything that should be bounded.
   GoalHandle<Feedback, Result> sendGoal<Goal, Feedback, Result>(
     String actionName,
     Goal goal, {
     bool withFeedback = true,
+    Duration? timeout,
     ActionCodec<Goal, Feedback, Result>? codec,
   }) {
     final resolved = codec ?? ActionRegistry.of<Goal, Feedback, Result>();
@@ -513,11 +521,13 @@ final class Ros2Client {
           resultCompleter.completeError(ActionFailedException(
               actionName, status, 'Goal ended as ${status.name}'));
         }
+        handle._timeoutTimer?.cancel();
         unawaited(feedbackController.close());
         _activeGoals.remove(id);
       },
       onError: (error) {
         if (!resultCompleter.isCompleted) resultCompleter.completeError(error);
+        handle._timeoutTimer?.cancel();
         unawaited(feedbackController.close());
         _activeGoals.remove(id);
       },
@@ -531,6 +541,15 @@ final class Ros2Client {
       'args': resolved.encodeGoal(goal),
       'feedback': withFeedback,
     });
+
+    if (timeout != null) {
+      handle._timeoutTimer = Timer(timeout, () {
+        final active = _activeGoals.remove(id);
+        if (active == null || resultCompleter.isCompleted) return;
+        active.fail(ActionFailedException(
+            actionName, GoalStatus.unknown, 'No result within $timeout'));
+      });
+    }
 
     return handle;
   }

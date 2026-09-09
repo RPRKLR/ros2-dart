@@ -66,48 +66,80 @@ Future<void> main(List<String> args) async {
     }
 
     final messages = <MessageDef>[];
-    final msgDir = Directory('${dir.path}/msg');
-    if (msgDir.existsSync()) {
-      final files = msgDir
-          .listSync()
-          .whereType<File>()
-          .where((f) => f.path.endsWith('.msg'))
-          .toList()
-        ..sort((a, b) => a.path.compareTo(b.path));
-
-      for (final file in files) {
-        final name = file.uri.pathSegments.last.replaceAll('.msg', '');
-        try {
-          messages.add(InterfaceParser.parseMessage(
-            file.readAsStringSync(),
-            package: package,
-            name: name,
-          ));
-        } on InterfaceParseException catch (e) {
-          stderr.writeln('!  $e');
-          totalFailures++;
-        }
+    for (final file in _interfaceFiles(dir, 'msg', '.msg')) {
+      final name = file.uri.pathSegments.last.replaceAll('.msg', '');
+      try {
+        messages.add(InterfaceParser.parseMessage(
+          file.readAsStringSync(),
+          package: package,
+          name: name,
+        ));
+      } on InterfaceParseException catch (e) {
+        stderr.writeln('!  $e');
+        totalFailures++;
       }
     }
 
-    if (messages.isEmpty) {
-      stderr.writeln('!  $package: no .msg files under ${dir.path}');
+    final services = <ServiceDef>[];
+    for (final file in _interfaceFiles(dir, 'srv', '.srv')) {
+      final name = file.uri.pathSegments.last.replaceAll('.srv', '');
+      try {
+        services.add(InterfaceParser.parseService(
+          file.readAsStringSync(),
+          package: package,
+          name: name,
+        ));
+      } on InterfaceParseException catch (e) {
+        stderr.writeln('!  $e');
+        totalFailures++;
+      }
+    }
+
+    final actions = <ActionDef>[];
+    for (final file in _interfaceFiles(dir, 'action', '.action')) {
+      final name = file.uri.pathSegments.last.replaceAll('.action', '');
+      try {
+        actions.add(InterfaceParser.parseAction(
+          file.readAsStringSync(),
+          package: package,
+          name: name,
+        ));
+      } on InterfaceParseException catch (e) {
+        stderr.writeln('!  $e');
+        totalFailures++;
+      }
+    }
+
+    if (messages.isEmpty && services.isEmpty && actions.isEmpty) {
+      stderr.writeln('!  $package: no .msg, .srv or .action files under '
+          '${dir.path}');
       continue;
     }
 
-    final writer = LibraryWriter(package: package, messages: messages);
+    final writer = LibraryWriter(
+      package: package,
+      messages: messages,
+      services: services,
+      actions: actions,
+    );
     final target = File('$outDir/$package.dart')
       ..writeAsStringSync(writer.write());
     totalMessages += messages.length;
     generated.add(package);
 
+    final summary = [
+      '${messages.length} messages',
+      if (services.isNotEmpty) '${services.length} services',
+      if (actions.isNotEmpty) '${actions.length} actions',
+    ].join(', ');
+
     final deps = writer.referencedPackages.where((d) => !done.contains(d));
     if (deps.isNotEmpty) {
-      stdout.writeln('   ${target.path}  (${messages.length} messages)'
+      stdout.writeln('   ${target.path}  ($summary)'
           '  -> pulling in ${deps.join(', ')}');
       queue.addAll(deps);
     } else {
-      stdout.writeln('   ${target.path}  (${messages.length} messages)');
+      stdout.writeln('   ${target.path}  ($summary)');
     }
   }
 
@@ -125,19 +157,30 @@ void _writeBarrel(Directory output, List<String> packages) {
   final buffer = StringBuffer()
     ..writeln('// GENERATED CODE - DO NOT EDIT BY HAND.')
     ..writeln();
-  // Imported as well as exported: the registration function below calls into
-  // each library, which an export alone does not bring into scope.
+  // Imports, but deliberately no re-exports. ROS packages legitimately reuse
+  // type names -- geometry_msgs/Pose and turtlesim/Pose, std_msgs/Bool and
+  // example_interfaces/Bool -- and a barrel cannot export both. Import the
+  // specific library you need, with a prefix when two collide:
+  //
+  //   import 'msgs/geometry_msgs.dart';
+  //   import 'msgs/turtlesim.dart' as turtlesim;
   for (final package in packages) {
     buffer.writeln("import '$package.dart';");
   }
-  buffer.writeln();
-  for (final package in packages) {
-    buffer.writeln("export '$package.dart';");
-  }
   buffer
     ..writeln()
-    ..writeln('/// Registers every generated message package.')
-    ..writeln('void registerGeneratedMessages() {');
+    ..writeln('/// Registers every generated message, service and action.')
+    ..writeln('///')
+    ..writeln(
+        '/// Call once at startup, before the first subscribe, advertise,')
+    ..writeln('/// service call or action goal. This barrel intentionally does')
+    ..writeln('/// not re-export the types: import the individual libraries')
+    ..writeln('/// listed below, since ROS packages reuse type names.')
+    ..writeln('///');
+  for (final package in packages) {
+    buffer.writeln("/// * `$package.dart`");
+  }
+  buffer.writeln('void registerGeneratedMessages() {');
   for (final package in packages) {
     final pascal = package
         .split('_')
@@ -162,6 +205,19 @@ List<String> _rosSearchRoots() {
   final distro = Platform.environment['ROS_DISTRO'];
   if (distro != null) roots.add('/opt/ros/$distro/share');
   return roots;
+}
+
+/// Interface files of one kind inside a package share directory, sorted so
+/// generation is deterministic.
+List<File> _interfaceFiles(Directory pkg, String subdir, String extension) {
+  final dir = Directory('${pkg.path}/$subdir');
+  if (!dir.existsSync()) return const [];
+  return dir
+      .listSync()
+      .whereType<File>()
+      .where((f) => f.path.endsWith(extension))
+      .toList()
+    ..sort((a, b) => a.path.compareTo(b.path));
 }
 
 Directory? _findPackage(String package, List<String> roots) {

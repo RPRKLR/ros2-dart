@@ -6,5 +6,7 @@
 library;
 
 export 'src/messages/conversions.dart' show Field;
+export 'src/messages/action.dart' show ActionCodec, ActionRegistry;
 export 'src/messages/message.dart'
     show MessageCodec, MessageRegistry, RosMessage;
+export 'src/messages/service.dart' show ServiceCodec, ServiceRegistry;

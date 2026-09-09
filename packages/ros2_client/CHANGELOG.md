@@ -4,8 +4,12 @@
 
 Initial release.
 
-- Code generator (`dart run ros2_client:generate`) for `.msg` definitions, with
-  automatic transitive dependency resolution
+- Code generator (`dart run ros2_client:generate`) for `.msg`, `.srv` and
+  `.action` definitions, with automatic transitive dependency resolution;
+  generated services and actions register typed codecs, so `callService` and
+  `sendGoal` need no type strings
+- `sendGoal` takes an optional `timeout`: a goal sent to an action server that
+  does not exist gets no reply at all, and would otherwise never complete
 - CBOR is now the default wire encoding: rosbridge serialises non-finite floats
   as JSON `null`, so `inf` and `nan` are indistinguishable over plain JSON
 
