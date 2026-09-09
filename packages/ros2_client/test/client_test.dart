@@ -51,6 +51,43 @@ void main() {
       final published = bridge.opsOf('publish');
       expect(published, hasLength(1));
       expect((published.single['msg']! as Map)['data'], 'queued');
+
+      // The advertise must not be sent twice: _resubscribeAll replays it from
+      // live state, so queuing it in the outbox as well would duplicate it.
+      expect(bridge.opsOf('advertise'), hasLength(1));
+    });
+
+    test('a subscribe made while offline is sent exactly once', () async {
+      bridge = FakeBridge();
+      ros = Ros2Client(Uri.parse('ws://fake:9090'),
+          transportFactory: (_) => bridge,
+          reconnectPolicy: ReconnectPolicy.none);
+
+      ros.subscribe<StringMsg>('/chatter').listen((_) {});
+      await pump();
+      await ros.connect();
+      await pump();
+
+      expect(bridge.opsOf('subscribe'), hasLength(1));
+    });
+
+    test('connect() fails if close() happens while it is in flight', () async {
+      final gate = GatedBridge();
+      final client = Ros2Client(
+        Uri.parse('ws://fake:9090'),
+        transportFactory: (_) => gate,
+        reconnectPolicy: ReconnectPolicy.none,
+      );
+
+      // Held open until released, so close() genuinely lands mid-connect.
+      final connecting = client.connect();
+      await pump();
+      await client.close();
+      gate.release();
+
+      // Completing successfully would hand back a client that is closed.
+      await expectLater(connecting, throwsA(isA<StateError>()));
+      expect(client.state, RosConnectionState.closed);
     });
 
     test('re-issues subscriptions after a reconnect', () async {
@@ -366,6 +403,48 @@ void main() {
       expect(images.single.data, jpeg);
     });
 
+    test('a reused fragment id starts a new group instead of dropping it',
+        () async {
+      await connect();
+      final received = <StringMsg>[];
+      ros.subscribe<StringMsg>('/chatter').listen(received.add);
+      await pump();
+
+      // One part of a two-part group that never completes.
+      bridge.emit(jsonEncode({
+        'op': 'fragment',
+        'id': 'F1',
+        'data': '{"op":',
+        'num': 0,
+        'total': 2
+      }));
+      await pump();
+
+      // The same id reused for a complete single-part message.
+      final whole = jsonEncode({
+        'op': 'publish',
+        'topic': '/chatter',
+        'msg': {'data': 'second'}
+      });
+      bridge.emit(jsonEncode(
+          {'op': 'fragment', 'id': 'F1', 'data': whole, 'num': 0, 'total': 1}));
+      await pump();
+
+      expect(received.single.data, 'second');
+    });
+
+    test('rejects a nonsense fragment header instead of allocating', () async {
+      await connect();
+      final errors = <RosStatus>[];
+      ros.status.listen(errors.add);
+
+      bridge.emit(jsonEncode(
+          {'op': 'fragment', 'id': 'bad', 'data': 'x', 'num': 0, 'total': -1}));
+      await pump();
+
+      expect(errors.any((e) => e.level == StatusLevel.error), isTrue);
+    });
+
     test('reassembles a fragmented message', () async {
       await connect();
       final received = <StringMsg>[];
@@ -433,6 +512,26 @@ void main() {
       expect(messages.single.data, 'NaN and Infinity are words');
     });
 
+    test('a wrong-typed field is reported, not thrown into the zone', () async {
+      await connect();
+      final errors = <RosStatus>[];
+      ros.status.listen(errors.add);
+      final received = <StringMsg>[];
+      ros.subscribe<StringMsg>('/chatter').listen(received.add);
+      await pump();
+
+      // Well-formed JSON, but `topic` is a number: handlers cast it to String.
+      bridge.emit('{"op":"publish","topic":123,"msg":{"data":"x"}}');
+      await pump();
+
+      expect(errors.any((e) => e.level == StatusLevel.error), isTrue);
+
+      // And the client keeps working afterwards.
+      bridge.publish('/chatter', {'data': 'still alive'});
+      await pump();
+      expect(received.single.data, 'still alive');
+    });
+
     test('genuinely malformed JSON still reports an error', () async {
       await connect();
       final errors = <RosStatus>[];
@@ -477,6 +576,81 @@ void main() {
         throwsA(isA<ArgumentError>()
             .having((e) => e.message, 'message', contains('<node>:<param>'))),
       );
+    });
+  });
+
+  group('non-finite floats on publish', () {
+    test('encodes inf and nan as null instead of throwing', () {
+      // jsonEncode throws on non-finite doubles, and ROS produces them
+      // constantly -- every out-of-range lidar beam is inf.
+      final scan = LaserScan(
+        ranges: Float32List.fromList([1.0, double.infinity, double.nan]),
+        intensities: Float32List(0),
+      );
+      final encoded = WireCodec.encode({'op': 'publish', 'msg': scan.toJson()});
+      expect(encoded, contains('[1.0,null,null]'));
+    });
+
+    test('encodes a non-finite scalar as null', () {
+      final encoded = WireCodec.encode(
+          {'op': 'publish', 'msg': const Float64Msg(double.nan).toJson()});
+      expect(encoded, contains('"data":null'));
+    });
+  });
+
+  group('message equality', () {
+    test('sensor and nav messages compare by value, not identity', () {
+      // The RosMessage contract promises value semantics so messages can be
+      // used as Flutter widget inputs and cache keys.
+      final a = LaserScan(
+          ranges: Float32List.fromList([1, 2]), intensities: Float32List(0));
+      final b = LaserScan(
+          ranges: Float32List.fromList([1, 2]), intensities: Float32List(0));
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+
+      final c = LaserScan(
+          ranges: Float32List.fromList([1, 3]), intensities: Float32List(0));
+      expect(a, isNot(equals(c)));
+    });
+
+    test('images with equal bytes but separate buffers compare equal', () {
+      final a = RosImage(width: 2, data: Uint8List.fromList([1, 2, 3]));
+      final b = RosImage(width: 2, data: Uint8List.fromList([1, 2, 3]));
+      expect(a, equals(b));
+    });
+
+    test('NavSatFix preserves the constellation bitmask', () {
+      final decoded = NavSatFix.fromJson(const {
+        'status': {'status': 1, 'service': 7},
+        'latitude': 1.0,
+      });
+      expect(decoded.service, 7);
+      // And it survives a round trip rather than being reset to zero.
+      expect(NavSatFix.fromJson(decoded.toJson()).service, 7);
+    });
+  });
+
+  group('message registry', () {
+    test('re-registering a type updates both the full and short names', () {
+      // The two aliases for one ROS type must never resolve to different
+      // codecs.
+      const first = MessageCodec<StringMsg>(
+          rosType: 'demo_msgs/msg/Thing',
+          fromJson: StringMsg.fromJson,
+          toJson: _stringToJson);
+      const second = MessageCodec<StringMsg>(
+          rosType: 'demo_msgs/msg/Thing',
+          fromJson: StringMsg.fromJson,
+          toJson: _stringToJson);
+
+      MessageRegistry.register(first);
+      MessageRegistry.register(second);
+
+      expect(
+          identical(MessageRegistry.byRosType('demo_msgs/msg/Thing'),
+              MessageRegistry.byRosType('demo_msgs/Thing')),
+          isTrue);
     });
   });
 
@@ -586,3 +760,5 @@ final class _Goal {
 }
 
 final class _Unregistered {}
+
+Map<String, Object?> _stringToJson(StringMsg m) => m.toJson();

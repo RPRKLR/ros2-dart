@@ -71,6 +71,29 @@ final class RosImage implements RosMessage {
   @override
   String toString() =>
       'RosImage(${width}x$height, $encoding, ${data.lengthInBytes} bytes)';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is RosImage &&
+          other.header == header &&
+          other.height == height &&
+          other.width == width &&
+          other.encoding == encoding &&
+          other.isBigendian == isBigendian &&
+          other.step == step &&
+          _listEquals(other.data, data));
+
+  @override
+  int get hashCode => Object.hash(
+        header,
+        height,
+        width,
+        encoding,
+        isBigendian,
+        step,
+        Object.hashAll(data),
+      );
 }
 
 /// `sensor_msgs/msg/CompressedImage` — usually the cheapest way to stream a
@@ -109,6 +132,21 @@ final class CompressedImage implements RosMessage {
 
   @override
   String toString() => 'CompressedImage($format, ${data.lengthInBytes} bytes)';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CompressedImage &&
+          other.header == header &&
+          other.format == format &&
+          _listEquals(other.data, data));
+
+  @override
+  int get hashCode => Object.hash(
+        header,
+        format,
+        Object.hashAll(data),
+      );
 }
 
 /// `sensor_msgs/msg/LaserScan`.
@@ -169,6 +207,35 @@ final class LaserScan implements RosMessage {
 
   @override
   String toString() => 'LaserScan(${ranges.length} samples)';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LaserScan &&
+          other.header == header &&
+          other.angleMin == angleMin &&
+          other.angleMax == angleMax &&
+          other.angleIncrement == angleIncrement &&
+          other.timeIncrement == timeIncrement &&
+          other.scanTime == scanTime &&
+          other.rangeMin == rangeMin &&
+          other.rangeMax == rangeMax &&
+          _listEquals(other.ranges, ranges) &&
+          _listEquals(other.intensities, intensities));
+
+  @override
+  int get hashCode => Object.hash(
+        header,
+        angleMin,
+        angleMax,
+        angleIncrement,
+        timeIncrement,
+        scanTime,
+        rangeMin,
+        rangeMax,
+        Object.hashAll(ranges),
+        Object.hashAll(intensities),
+      );
 }
 
 /// `sensor_msgs/msg/Imu`.
@@ -205,6 +272,23 @@ final class Imu implements RosMessage {
         'angular_velocity': angularVelocity.toJson(),
         'linear_acceleration': linearAcceleration.toJson(),
       };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Imu &&
+          other.header == header &&
+          other.orientation == orientation &&
+          other.angularVelocity == angularVelocity &&
+          other.linearAcceleration == linearAcceleration);
+
+  @override
+  int get hashCode => Object.hash(
+        header,
+        orientation,
+        angularVelocity,
+        linearAcceleration,
+      );
 }
 
 /// `sensor_msgs/msg/JointState`.
@@ -249,6 +333,25 @@ final class JointState implements RosMessage {
         'velocity': Field.encodeNumbers(velocity),
         'effort': Field.encodeNumbers(effort),
       };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is JointState &&
+          other.header == header &&
+          _listEquals(other.name, name) &&
+          _listEquals(other.position, position) &&
+          _listEquals(other.velocity, velocity) &&
+          _listEquals(other.effort, effort));
+
+  @override
+  int get hashCode => Object.hash(
+        header,
+        Object.hashAll(name),
+        Object.hashAll(position),
+        Object.hashAll(velocity),
+        Object.hashAll(effort),
+      );
 }
 
 /// `sensor_msgs/msg/BatteryState`.
@@ -300,6 +403,31 @@ final class BatteryState implements RosMessage {
         'power_supply_status': powerSupplyStatus,
         'present': present,
       };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BatteryState &&
+          other.header == header &&
+          other.voltage == voltage &&
+          other.current == current &&
+          other.charge == charge &&
+          other.capacity == capacity &&
+          other.percentage == percentage &&
+          other.powerSupplyStatus == powerSupplyStatus &&
+          other.present == present);
+
+  @override
+  int get hashCode => Object.hash(
+        header,
+        voltage,
+        current,
+        charge,
+        capacity,
+        percentage,
+        powerSupplyStatus,
+        present,
+      );
 }
 
 /// `sensor_msgs/msg/NavSatFix`.
@@ -311,6 +439,7 @@ final class NavSatFix implements RosMessage {
     this.longitude = 0,
     this.altitude = 0,
     this.status = 0,
+    this.service = 0,
   });
 
   factory NavSatFix.fromJson(Map<String, Object?> json) => NavSatFix(
@@ -320,6 +449,8 @@ final class NavSatFix implements RosMessage {
         altitude: Field.asDouble(json['altitude']),
         status: Field.asInt(
             (json['status'] as Map<String, Object?>?)?['status'] ?? -1),
+        service: Field.asInt(
+            (json['status'] as Map<String, Object?>?)?['service'] ?? 0),
       );
 
   final Header header;
@@ -327,6 +458,11 @@ final class NavSatFix implements RosMessage {
 
   /// -1 no fix, 0 unaugmented fix, 1 SBAS, 2 GBAS.
   final int status;
+
+  /// Bitmask of the constellations used for the fix: 1 GPS, 2 GLONASS,
+  /// 4 COMPASS/BeiDou, 8 Galileo. Dropping it on a round trip would silently
+  /// discard which constellations a receiver actually saw.
+  final int service;
 
   bool get hasFix => status >= 0;
 
@@ -339,8 +475,29 @@ final class NavSatFix implements RosMessage {
         'latitude': latitude,
         'longitude': longitude,
         'altitude': altitude,
-        'status': {'status': status, 'service': 0},
+        'status': {'status': status, 'service': service},
       };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is NavSatFix &&
+          other.header == header &&
+          other.latitude == latitude &&
+          other.longitude == longitude &&
+          other.altitude == altitude &&
+          other.status == status &&
+          other.service == service);
+
+  @override
+  int get hashCode => Object.hash(
+        header,
+        latitude,
+        longitude,
+        altitude,
+        status,
+        service,
+      );
 }
 
 /// Registers every `sensor_msgs` codec.
@@ -374,3 +531,14 @@ void registerSensorMsgs() {
 }
 
 Map<String, Object?> _toJson(RosMessage m) => m.toJson();
+
+/// Element-wise comparison, so two structurally identical messages holding
+/// separate typed-data buffers still compare equal.
+bool _listEquals(List<Object?> a, List<Object?> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}

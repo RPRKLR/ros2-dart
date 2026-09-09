@@ -251,6 +251,29 @@ final class RosTransformStamped implements RosMessage {
   int get hashCode => Object.hash(header, childFrameId, transform);
 }
 
+/// `tf2_msgs/msg/TFMessage` — the payload of `/tf` and `/tf_static`.
+@immutable
+final class TFMessage implements RosMessage {
+  const TFMessage({this.transforms = const []});
+
+  factory TFMessage.fromJson(Map<String, Object?> json) => TFMessage(
+        transforms:
+            Field.asList(json['transforms'], RosTransformStamped.fromJson),
+      );
+
+  final List<RosTransformStamped> transforms;
+
+  @override
+  String get rosType => 'tf2_msgs/msg/TFMessage';
+
+  @override
+  Map<String, Object?> toJson() =>
+      {'transforms': transforms.map((t) => t.toJson()).toList()};
+
+  @override
+  String toString() => 'TFMessage(${transforms.length} transforms)';
+}
+
 /// Registers every `geometry_msgs` codec.
 void registerGeometryMsgs() {
   MessageRegistry.register(const MessageCodec<Vector3>(
@@ -284,6 +307,10 @@ void registerGeometryMsgs() {
   MessageRegistry.register(const MessageCodec<RosTransformStamped>(
       rosType: 'geometry_msgs/msg/TransformStamped',
       fromJson: RosTransformStamped.fromJson,
+      toJson: _toJson));
+  MessageRegistry.register(const MessageCodec<TFMessage>(
+      rosType: 'tf2_msgs/msg/TFMessage',
+      fromJson: TFMessage.fromJson,
       toJson: _toJson));
 }
 

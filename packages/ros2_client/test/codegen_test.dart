@@ -198,6 +198,62 @@ int32 x
     });
   });
 
+  group('emitter: literals and defaults', () {
+    test('honours a declared scalar default', () {
+      // geometry_msgs/Quaternion declares `float64 w 1`; ignoring it makes a
+      // default-built Quaternion (0,0,0,0) rather than the identity rotation.
+      final msg = parse('float64 x\nfloat64 w 1');
+      expect(DartEmitter.constDefaultFor(msg.fields[0]), '0');
+      expect(DartEmitter.constDefaultFor(msg.fields[1]), '1.0');
+    });
+
+    test('honours a declared string default', () {
+      final msg = parse('string relative_to "world"');
+      expect(DartEmitter.constDefaultFor(msg.fields.single), "'world'");
+    });
+
+    test('honours an array default for non-typed-data lists', () {
+      // Numeric arrays map to typed-data lists, which have no const form, so
+      // they route through fallbackFor instead.
+      final msg = parse('string[] names [a, b]');
+      expect(
+          DartEmitter.constDefaultFor(msg.fields.single), "const ['a', 'b']");
+    });
+
+    test('typed-array defaults become a fromList fallback', () {
+      final msg = parse('float32[] gains [0.5, 1.5]');
+      expect(DartEmitter.fallbackFor(msg.fields.single),
+          'Float32List.fromList(const [0.5, 1.5])');
+    });
+
+    test('converts binary and octal literals, which Dart has no syntax for',
+        () {
+      // ublox_ubx_msgs uses `uint8 CALIB_STATUS_CALIBRATING = 0b01`.
+      expect(DartEmitter.literal('0b01', 'int'), '1');
+      expect(DartEmitter.literal('0b11', 'int'), '3');
+      expect(DartEmitter.literal('-0b10', 'int'), '-2');
+      expect(DartEmitter.literal('0o17', 'int'), '15');
+      // Hex is valid Dart and must pass through untouched.
+      expect(DartEmitter.literal('0xFF', 'int'), '0xFF');
+    });
+
+    test('appends .0 only when a double literal needs it', () {
+      expect(DartEmitter.literal('5', 'double'), '5.0');
+      expect(DartEmitter.literal('5.5', 'double'), '5.5');
+      // Case-insensitive: `1E10.0` would not be a valid literal.
+      expect(DartEmitter.literal('1e10', 'double'), '1e10');
+      expect(DartEmitter.literal('1E10', 'double'), '1E10');
+    });
+
+    test('renames message types that shadow dart:core', () {
+      // zed_msgs/msg/Object as `class Object` shadows dart:core.Object for the
+      // whole library and breaks every Map<String, Object?> in it.
+      expect(DartEmitter.className('zed_msgs/Object'), 'RosObject');
+      expect(DartEmitter.className('pkg/List'), 'RosList');
+      expect(DartEmitter.className('pkg/Marker'), 'Marker');
+    });
+  });
+
   group('writer: services and actions', () {
     String emitService(String source, {String name = 'AddTwoInts'}) =>
         LibraryWriter(
@@ -323,6 +379,20 @@ int32 x
       );
       expect(writer.referencedPackages,
           containsAll(['std_msgs', 'builtin_interfaces']));
+    });
+
+    test('escapes angle brackets in doc comments', () {
+      // ROS comments contain things like `value <= 100`, which markdown reads
+      // as an HTML tag.
+      final code = emit('int32 x  # must be <= 100 and > 0');
+      expect(code, contains('&lt;= 100'));
+      expect(code, contains('&gt; 0'));
+    });
+
+    test('disambiguates two constants that mangle to one identifier', () {
+      final code = emit('int32 FOO_BAR=1\nint32 FOO__BAR=2');
+      expect(code, contains('fooBar = 1'));
+      expect(code, contains('fooBarConst = 2'));
     });
 
     test('emits registration and equality helpers', () {

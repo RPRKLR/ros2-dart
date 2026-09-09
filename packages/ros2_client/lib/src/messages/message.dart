@@ -63,7 +63,10 @@ abstract final class MessageRegistry {
     // some rosbridge responses; accept them as aliases.
     final short = _shortName(codec.rosType);
     if (short != null) {
-      _byRosType.putIfAbsent(short, () => codec as MessageCodec<Object?>);
+      // Overwrites rather than putIfAbsent: the full name above always takes
+      // the newest registration, so keeping the first alias would leave the
+      // two names for one ROS type resolving to different codecs.
+      _byRosType[short] = codec as MessageCodec<Object?>;
     }
   }
 

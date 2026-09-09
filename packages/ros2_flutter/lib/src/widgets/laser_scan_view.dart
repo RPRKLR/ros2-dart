@@ -123,5 +123,7 @@ class _LaserScanPainter extends CustomPainter {
   bool shouldRepaint(_LaserScanPainter old) =>
       !identical(old.scan, scan) ||
       old.maxRange != maxRange ||
-      old.pointColor != pointColor;
+      old.pointColor != pointColor ||
+      old.gridColor != gridColor ||
+      old.showRobot != showRobot;
 }

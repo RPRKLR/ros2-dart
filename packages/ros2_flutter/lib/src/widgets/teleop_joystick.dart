@@ -162,7 +162,10 @@ class _JoystickPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_JoystickPainter old) =>
-      old.knob != knob || old.knobColor != knobColor;
+      old.knob != knob ||
+      old.knobColor != knobColor ||
+      old.baseColor != baseColor ||
+      old.outlineColor != outlineColor;
 }
 
 /// A directional pad for precise, discrete teleoperation.

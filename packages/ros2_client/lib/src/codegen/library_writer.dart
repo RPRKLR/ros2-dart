@@ -71,6 +71,21 @@ final class LibraryWriter {
   /// bundled with the client. Used by the CLI to pull in transitive deps.
   List<String> get referencedPackages => _externalPackages();
 
+  /// Fully qualified nested types these messages reference, as
+  /// `package/TypeName`. The CLI checks each was actually generated.
+  Set<String> get referencedTypes {
+    final types = <String>{};
+    for (final message in _allMessages) {
+      for (final field in message.fields) {
+        if (DartEmitter.scalarDartType(field.type) != null) continue;
+        final parts = field.type.split('/');
+        final pkg = parts.length > 1 ? parts.first : package;
+        types.add('$pkg/${parts.last}');
+      }
+    }
+    return types;
+  }
+
   /// Other generated libraries this one references.
   List<String> _externalPackages() {
     final deps = <String>{};
@@ -90,6 +105,15 @@ final class LibraryWriter {
     return sorted;
   }
 
+  /// Escapes a ROS comment for use as a Dart doc comment.
+  ///
+  /// Doc comments are rendered as markdown, so a bare `<` from a `.msg`
+  /// comment (`value <= 100`) is read as an HTML tag and linted.
+  static String _doc(String comment) => comment
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
+
   void _writeMessage(StringBuffer out, MessageDef message) {
     final name = DartEmitter.className(message.name);
     final fields = message.fields;
@@ -103,7 +127,7 @@ final class LibraryWriter {
 
     if (message.docComment != null) {
       for (final line in message.docComment!.split('\n')) {
-        out.writeln('/// ${line.trim()}');
+        out.writeln('/// ${_doc(line.trim())}');
       }
       out.writeln('///');
     }
@@ -160,18 +184,24 @@ final class LibraryWriter {
     final fieldNames = {
       for (final f in fields) DartEmitter.fieldName(f.name),
     };
+    final taken = {...fieldNames};
     for (final constant in message.constants) {
       final dartType = DartEmitter.scalarDartType(constant.type) ?? 'Object';
-      final value = _literal(constant.value, dartType);
-      if (constant.comment != null) out.writeln('  /// ${constant.comment}');
-      final name = DartEmitter.constantName(constant.name, taken: fieldNames);
+      final value = DartEmitter.literal(constant.value, dartType);
+      if (constant.comment != null) {
+        out.writeln('  /// ${_doc(constant.comment!)}');
+      }
+      // `taken` grows as constants are emitted: two ROS constants can mangle
+      // to one Dart identifier just as a constant and a field can.
+      final name = DartEmitter.constantName(constant.name, taken: taken);
+      taken.add(name);
       out.writeln('  static const $dartType $name = $value;');
     }
     if (message.constants.isNotEmpty) out.writeln();
 
     // Fields.
     for (final field in fields) {
-      if (field.comment != null) out.writeln('  /// ${field.comment}');
+      if (field.comment != null) out.writeln('  /// ${_doc(field.comment!)}');
       if (field.arrayKind == ArrayKind.fixed) {
         out.writeln('  /// Fixed length: ${field.arraySize}.');
       } else if (field.arrayKind == ArrayKind.bounded) {
@@ -310,20 +340,4 @@ final class LibraryWriter {
       .where((p) => p.isNotEmpty)
       .map((p) => p[0].toUpperCase() + p.substring(1))
       .join();
-
-  /// Renders a constant's value as a Dart literal.
-  static String _literal(String raw, String dartType) {
-    final value = raw.trim();
-    if (dartType == 'String') {
-      if (value.startsWith('"') || value.startsWith("'")) return value;
-      return "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'")}'";
-    }
-    if (dartType == 'bool') {
-      return (value == '1' || value.toLowerCase() == 'true') ? 'true' : 'false';
-    }
-    if (dartType == 'double' && !value.contains('.') && !value.contains('e')) {
-      return '$value.0';
-    }
-    return value;
-  }
 }

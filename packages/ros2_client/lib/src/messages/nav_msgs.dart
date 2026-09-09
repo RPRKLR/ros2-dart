@@ -45,6 +45,23 @@ final class Odometry implements RosMessage {
 
   @override
   String toString() => 'Odometry($pose, $twist)';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Odometry &&
+          other.header == header &&
+          other.childFrameId == childFrameId &&
+          other.pose == pose &&
+          other.twist == twist);
+
+  @override
+  int get hashCode => Object.hash(
+        header,
+        childFrameId,
+        pose,
+        twist,
+      );
 }
 
 /// `nav_msgs/msg/MapMetaData`.
@@ -79,6 +96,23 @@ final class MapMetaData implements RosMessage {
         'height': height,
         'origin': origin.toJson(),
       };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MapMetaData &&
+          other.resolution == resolution &&
+          other.width == width &&
+          other.height == height &&
+          other.origin == origin);
+
+  @override
+  int get hashCode => Object.hash(
+        resolution,
+        width,
+        height,
+        origin,
+      );
 }
 
 /// `nav_msgs/msg/OccupancyGrid`.
@@ -122,6 +156,21 @@ final class OccupancyGrid implements RosMessage {
 
   @override
   String toString() => 'OccupancyGrid(${info.width}x${info.height})';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is OccupancyGrid &&
+          other.header == header &&
+          other.info == info &&
+          _listEquals(other.data, data));
+
+  @override
+  int get hashCode => Object.hash(
+        header,
+        info,
+        Object.hashAll(data),
+      );
 }
 
 /// `nav_msgs/msg/Path`.
@@ -148,6 +197,19 @@ final class RosPath implements RosMessage {
 
   @override
   String toString() => 'RosPath(${poses.length} poses)';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is RosPath &&
+          other.header == header &&
+          _listEquals(other.poses, poses));
+
+  @override
+  int get hashCode => Object.hash(
+        header,
+        Object.hashAll(poses),
+      );
 }
 
 /// Registers every `nav_msgs` codec.
@@ -171,3 +233,14 @@ void registerNavMsgs() {
 }
 
 Map<String, Object?> _toJson(RosMessage m) => m.toJson();
+
+/// Element-wise comparison, so two structurally identical messages holding
+/// separate typed-data buffers still compare equal.
+bool _listEquals(List<Object?> a, List<Object?> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}

@@ -55,6 +55,10 @@ Future<void> main(List<String> args) async {
   final done = <String>{};
   final generated = <String>[];
 
+  /// Fully qualified type names actually emitted, and those referenced.
+  final allTypes = <String>{};
+  final emitted = <String, Set<String>>{};
+
   while (queue.isNotEmpty) {
     final package = queue.removeAt(0);
     if (!done.add(package)) continue;
@@ -127,6 +131,20 @@ Future<void> main(List<String> args) async {
     totalMessages += messages.length;
     generated.add(package);
 
+    for (final message in messages) {
+      allTypes.add('$package/${message.name}');
+    }
+    for (final service in services) {
+      allTypes.add('$package/${service.request.name}');
+      allTypes.add('$package/${service.response.name}');
+    }
+    for (final action in actions) {
+      allTypes.add('$package/${action.goal.name}');
+      allTypes.add('$package/${action.result.name}');
+      allTypes.add('$package/${action.feedback.name}');
+    }
+    emitted[package] = writer.referencedTypes;
+
     final summary = [
       '${messages.length} messages',
       if (services.isNotEmpty) '${services.length} services',
@@ -145,6 +163,26 @@ Future<void> main(List<String> args) async {
 
   generated.sort();
   _writeBarrel(output, generated);
+
+  // A field can reference a type that has no .msg file -- ROS also allows
+  // .idl definitions, which this generator does not read. Without this check
+  // generation "succeeds" and the output simply fails to compile.
+  final missing = <String>{};
+  for (final entry in emitted.entries) {
+    for (final type in entry.value) {
+      if (!allTypes.contains(type)) missing.add('${entry.key}: $type');
+    }
+  }
+  if (missing.isNotEmpty) {
+    stderr.writeln('\n!  Referenced types with no .msg definition '
+        '(likely .idl-only, which is not supported):');
+    for (final item in missing) {
+      stderr.writeln('!    $item');
+    }
+    stderr.writeln('!  The generated code will not compile until these are '
+        'removed or provided.');
+    totalFailures++;
+  }
 
   stdout.writeln('\nGenerated $totalMessages messages into $outDir'
       '${totalFailures > 0 ? '  ($totalFailures problems)' : ''}');

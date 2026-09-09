@@ -124,3 +124,37 @@ final class FakeBridgeFarm {
     return bridge;
   }
 }
+
+/// A transport whose `connect()` blocks until the test releases it.
+///
+/// Needed to exercise interleavings that a synchronous fake cannot reach, such
+/// as `close()` landing while a connection attempt is still in flight.
+final class GatedBridge implements RosTransport {
+  final _incoming = StreamController<Object>.broadcast();
+  final _gate = Completer<void>();
+  final List<Map<String, Object?>> sent = [];
+  bool connected = false;
+
+  /// Lets the pending `connect()` finish.
+  void release() {
+    if (!_gate.isCompleted) _gate.complete();
+  }
+
+  @override
+  Stream<Object> get incoming => _incoming.stream;
+
+  @override
+  Future<void> connect() async {
+    await _gate.future;
+    connected = true;
+  }
+
+  @override
+  void send(String data) => sent.add(jsonDecode(data) as Map<String, Object?>);
+
+  @override
+  Future<void> close() async {
+    connected = false;
+    if (!_incoming.isClosed) await _incoming.close();
+  }
+}

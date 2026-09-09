@@ -19,6 +19,48 @@ abstract final class DartEmitter {
     'Route': 'RosRoute',
   };
 
+  /// `dart:core` names a message must never shadow.
+  ///
+  /// A `zed_msgs/msg/Object` generated as `class Object` shadows
+  /// `dart:core.Object` for the whole library, and every `Map<String, Object?>`
+  /// and `Object.hashAll` in the generated code then fails to resolve.
+  static const Set<String> dartCoreTypeNames = {
+    'Object',
+    'List',
+    'Map',
+    'Set',
+    'String',
+    'int',
+    'double',
+    'num',
+    'bool',
+    'Type',
+    'Function',
+    'Symbol',
+    'Iterable',
+    'Iterator',
+    'Future',
+    'Stream',
+    'Comparable',
+    'Exception',
+    'Error',
+    'Duration',
+    'DateTime',
+    'Uri',
+    'Pattern',
+    'RegExp',
+    'StringBuffer',
+    'Record',
+    'Enum',
+    'Null',
+    'Never',
+    'BigInt',
+    'Runes',
+    'StackTrace',
+    'Invocation',
+    'Expando',
+  };
+
   /// Dart keywords and common member names that cannot be field identifiers.
   static const Set<String> reservedFieldNames = {
     'assert',
@@ -69,7 +111,9 @@ abstract final class DartEmitter {
   /// and yields `AddTwoIntsRequest`.
   static String className(String rosTypeName) {
     final short = rosTypeName.split('/').last.replaceAll('_', '');
-    return reservedTypeNames[short] ?? short;
+    final mapped = reservedTypeNames[short];
+    if (mapped != null) return mapped;
+    return dartCoreTypeNames.contains(short) ? 'Ros$short' : short;
   }
 
   /// snake_case -> camelCase, avoiding Dart keywords.
@@ -195,6 +239,49 @@ abstract final class DartEmitter {
     return '$name.toJson()';
   }
 
+  /// Renders a ROS literal as Dart source.
+  ///
+  /// ROS constants use C-style bases that Dart does not share: `0b01` is a
+  /// valid ROS literal and a syntax error in Dart, which has no binary form.
+  static String literal(String raw, String dartType) {
+    final value = raw.trim();
+    if (value.isEmpty) return dartType == 'String' ? "''" : '0';
+
+    if (dartType == 'String') {
+      if ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))) {
+        final inner = value.substring(1, value.length - 1);
+        return "'${inner.replaceAll(r'\', r'\\').replaceAll("'", r"\'")}'";
+      }
+      return "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'")}'";
+    }
+
+    if (dartType == 'bool') {
+      final lower = value.toLowerCase();
+      return (lower == '1' || lower == 'true') ? 'true' : 'false';
+    }
+
+    // Binary and octal have no Dart syntax; convert to decimal. Hex is fine.
+    final negative = value.startsWith('-');
+    final magnitude = negative ? value.substring(1) : value;
+    final lower = magnitude.toLowerCase();
+    if (lower.startsWith('0b') || lower.startsWith('0o')) {
+      final radix = lower.startsWith('0b') ? 2 : 8;
+      final parsed = int.tryParse(magnitude.substring(2), radix: radix);
+      if (parsed != null) {
+        final result = negative ? -parsed : parsed;
+        return dartType == 'double' ? '$result.0' : '$result';
+      }
+    }
+
+    if (dartType == 'double') {
+      // Case-insensitive: `1E10.0` is not a valid literal.
+      final hasExponent = value.toLowerCase().contains('e');
+      if (!value.contains('.') && !hasExponent) return '$value.0';
+    }
+    return value;
+  }
+
   /// A const-safe default for a field, or `null` when the field must be
   /// initialised in the constructor body instead.
   ///
@@ -202,11 +289,24 @@ abstract final class DartEmitter {
   /// are handled with a nullable parameter and a `??` initialiser, which keeps
   /// every field optional without ever failing to compile.
   static String? constDefaultFor(FieldDef field) {
+    final scalar = scalarDartType(field.type);
+
     if (field.isArray) {
       if (typedListFor(field.type) != null) return null;
+      final elements = _defaultElements(field);
+      if (elements != null && scalar != null) {
+        return 'const [${elements.map((e) => literal(e, scalar)).join(', ')}]';
+      }
       return 'const []';
     }
-    return switch (scalarDartType(field.type)) {
+
+    // A `.msg` default is part of the interface contract:
+    // geometry_msgs/Quaternion declares `float64 w 1`, so a default-built
+    // Quaternion must be the identity rotation, not all zeros.
+    final declared = field.defaultValue;
+    if (declared != null && scalar != null) return literal(declared, scalar);
+
+    return switch (scalar) {
       'bool' => 'false',
       'int' => '0',
       'double' => '0',
@@ -215,11 +315,30 @@ abstract final class DartEmitter {
     };
   }
 
+  /// Splits a `[a, b, c]` array default into its element texts.
+  static List<String>? _defaultElements(FieldDef field) {
+    final raw = field.defaultValue?.trim();
+    if (raw == null || !raw.startsWith('[') || !raw.endsWith(']')) return null;
+    final inner = raw.substring(1, raw.length - 1).trim();
+    if (inner.isEmpty) return const [];
+    // Good enough for ROS defaults, which are scalars; a comma inside a quoted
+    // string would need a real tokeniser, and does not occur in practice.
+    return inner.split(',').map((e) => e.trim()).toList();
+  }
+
   /// The fallback expression used by a `??` initialiser.
   static String fallbackFor(FieldDef field) {
     if (field.isArray) {
       final typed = typedListFor(field.type);
-      if (typed != null) return '$typed(0)';
+      if (typed != null) {
+        final elements = _defaultElements(field);
+        final scalar = scalarDartType(field.type);
+        if (elements != null && elements.isNotEmpty && scalar != null) {
+          final values = elements.map((e) => literal(e, scalar)).join(', ');
+          return '$typed.fromList(const [$values])';
+        }
+        return '$typed(0)';
+      }
       return 'const []';
     }
     return '${className(field.type)}()';

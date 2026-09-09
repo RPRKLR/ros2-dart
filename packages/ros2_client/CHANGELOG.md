@@ -20,6 +20,12 @@ Initial release.
 - Full ROS 2 QoS profiles, including `sensorData` and `transientLocal` presets
 - JSON and CBOR wire codecs; CBOR typed arrays decode without a per-element
   copy. Handles base64 `uint8[]` and message fragmentation
+- Non-finite floats are encoded as `null` on the wire. `jsonEncode` throws on
+  `inf`/`nan`, so republishing a `LaserScan` whose out-of-range beams are `inf`
+  previously crashed
+- tf2 transforms: `TfBuffer` with tree walking, time interpolation and slerp,
+  `TfListener` feeding it from `/tf` and `/tf_static`, and rigid-body maths on
+  the `geometry_msgs` types
 - Graph introspection through `rosapi`, with timeouts sized for how slow those
   graph-wide queries actually are
 - `std_msgs`, `geometry_msgs`, `sensor_msgs` and `nav_msgs` core types

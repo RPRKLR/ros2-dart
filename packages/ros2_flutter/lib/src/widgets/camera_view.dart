@@ -33,6 +33,10 @@ class RosCameraView extends StatelessWidget {
   Widget build(BuildContext context) {
     return RosTopicBuilder<CompressedImage>(
       topic: topic,
+      // Camera topics are conventionally published best-effort (image_transport
+      // does), and a reliable subscriber matches none of them: the widget would
+      // sit on its placeholder forever with no error.
+      qos: QosProfile.sensorData,
       throttleRate: throttleRate,
       builder: (context, image) {
         if (image == null || image.data.isEmpty) {
@@ -111,6 +115,7 @@ class _RosRawImageViewState extends State<RosRawImageView> {
   Widget build(BuildContext context) {
     return RosTopicBuilder<RosImage>(
       topic: widget.topic,
+      qos: QosProfile.sensorData,
       compression: Compression.cbor,
       throttleRate: widget.throttleRate,
       builder: (context, frame) {

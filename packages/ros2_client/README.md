@@ -248,6 +248,41 @@ dart test                    # unit tests, no ROS needed
 dart test -t integration     # end-to-end against a local WebSocket server
 ```
 
+## Transforms (tf2)
+
+Frame lookups, with time interpolation and the same tree walk tf2 does:
+
+```dart
+final tf = TfListener(ros)..start();
+await tf.waitForTransform('map', 'base_link');
+
+// Where is the robot on the map?
+final pose = tf.buffer.lookupOrThrow('map', 'base_link');
+print('${pose.translation.x}, ${pose.translation.y}, yaw ${pose.rotation.yaw}');
+
+// Move a lidar hit into the map frame.
+final inMap = tf.buffer.transformPoint(hit, 'map', 'laser');
+```
+
+`/tf_static` is latched, so `TfListener` subscribes to it with
+`transientLocal` durability — with the default profile a late-joining app
+receives no static transforms at all and every fixed frame appears missing.
+
+`lookup` returns `null` on failure; `lookupOrThrow` explains why (unknown
+frame, disconnected trees, or a timestamp outside the buffered window), and
+`buffer.describe()` prints the tree:
+
+```
+map
+  odom  (37 samples)
+    base_link  (37 samples)
+      laser  (static)
+```
+
+Transform maths is available on the message types directly —
+`Quaternion.fromYaw`, `.yaw`, `.rpy`, `.slerp`, `.rotate(v)`, and
+`RosTransform.compose`, `.inverse`, `.transformPoint`, `.transformPose`.
+
 ## Parameters
 
 ROS 2 parameters belong to a node, so names are `<node>:<param>`:

@@ -168,6 +168,13 @@ final class Ros2Client {
   /// Maximum number of commands buffered while offline.
   static const int maxOutbox = 256;
 
+  /// Upper bound on a single message's fragment count, to reject nonsense
+  /// before allocating.
+  static const int maxFragments = 100000;
+
+  /// How many incomplete fragment groups to hold before discarding them all.
+  static const int maxPendingFragmentGroups = 64;
+
   // ---------------------------------------------------------------- lifecycle
 
   RosConnectionState get state => _state;
@@ -195,6 +202,9 @@ final class Ros2Client {
     if (_connecting != null) return _connecting!.future;
 
     final completer = Completer<void>();
+    // Only awaited when a second connect() overlaps the first; without this a
+    // failure with no concurrent caller surfaces as an unhandled async error.
+    completer.future.ignore();
     _connecting = completer;
     _setState(_reconnectAttempt == 0
         ? RosConnectionState.connecting
@@ -213,6 +223,17 @@ final class Ros2Client {
       // connection and immediately drops it would otherwise be retried at the
       // initial delay forever. Instead the connection's age is checked on
       // disconnect, in _scheduleReconnect.
+      // close() may have run while transport.connect() was in flight. It has
+      // already torn everything down, so completing successfully here would
+      // hand the caller a connected-looking client that is permanently closed.
+      if (_state == RosConnectionState.closed) {
+        await transport.close();
+        // Thrown, not completed: connect() is async, so the caller holds
+        // this function's own future. Completing `completer` alone would
+        // leave the caller seeing success while the error went unhandled.
+        throw StateError('Client was closed while connecting.');
+      }
+
       _connectedAt = DateTime.now();
       _setState(RosConnectionState.connected);
       _send({'op': Op.setLevel, 'level': statusLevel.wireName});
@@ -558,18 +579,34 @@ final class Ros2Client {
 
   String _nextId(String prefix) => '$prefix:${_idCounter++}';
 
+  /// Opcodes rebuilt from live state by [_resubscribeAll] on every connect.
+  ///
+  /// Queuing these in the outbox as well would send each one twice: once from
+  /// the replay and once from the flush.
+  static const Set<String> _replayedOps = {
+    Op.advertise,
+    Op.subscribe,
+    Op.unadvertise,
+    Op.unsubscribe,
+  };
+
   void _send(Map<String, Object?> command) {
     if (_state == RosConnectionState.closed) return;
     final transport = _transport;
     if (transport == null || !isConnected) {
-      if (_outbox.length < maxOutbox) _outbox.add(command);
+      _enqueue(command);
       return;
     }
     try {
       transport.send(WireCodec.encode(command));
     } catch (_) {
-      if (_outbox.length < maxOutbox) _outbox.add(command);
+      _enqueue(command);
     }
+  }
+
+  void _enqueue(Map<String, Object?> command) {
+    if (_replayedOps.contains(command['op'])) return;
+    if (_outbox.length < maxOutbox) _outbox.add(command);
   }
 
   void _flushOutbox() {
@@ -615,6 +652,8 @@ final class Ros2Client {
   void _scheduleReconnect() {
     if (_state == RosConnectionState.closed) return;
     _reconnectTimer?.cancel();
+    // Partial fragments cannot be completed across a reconnect.
+    _fragments.clear();
     unawaited(_incomingSub?.cancel());
     _incomingSub = null;
     unawaited(_transport?.close());
@@ -652,7 +691,15 @@ final class Ros2Client {
       _emitStatus(RosStatus(StatusLevel.error, 'Malformed frame: $e'));
       return;
     }
-    _dispatch(message);
+    // Dispatch is guarded too: a well-formed frame with a wrong-typed field
+    // (`"topic": 123`) throws deep in a handler, and an uncaught async error
+    // in the host app's zone is a worse outcome than a status event.
+    try {
+      _dispatch(message);
+    } catch (e) {
+      _emitStatus(RosStatus(
+          StatusLevel.error, 'Failed to handle a ${message['op']} frame: $e'));
+    }
   }
 
   void _dispatch(Map<String, Object?> message) {
@@ -740,7 +787,27 @@ final class Ros2Client {
     final data = message['data'] as String?;
     if (id == null || total == null || num == null || data == null) return;
 
-    final buffer = _fragments.putIfAbsent(id, () => _FragmentBuffer(total));
+    if (total <= 0 || total > maxFragments || num < 0 || num >= total) {
+      _emitStatus(RosStatus(StatusLevel.error,
+          'Ignoring fragment $id with num=$num of total=$total'));
+      return;
+    }
+
+    var buffer = _fragments[id];
+    // An id can be reused while an earlier group is still incomplete. Reusing
+    // the stale buffer would silently swallow the new message, so a differing
+    // total means this is a new group.
+    if (buffer == null || buffer.total != total) {
+      if (_fragments.length >= maxPendingFragmentGroups) {
+        _fragments.clear();
+        _emitStatus(const RosStatus(
+            StatusLevel.warning,
+            'Dropped incomplete fragment groups; the bridge is sending '
+            'fragments that never complete.'));
+      }
+      buffer = _FragmentBuffer(total);
+      _fragments[id] = buffer;
+    }
     buffer.add(num, data);
     if (!buffer.isComplete) return;
 
@@ -820,6 +887,7 @@ final class _ActiveGoal {
 
 final class _FragmentBuffer {
   _FragmentBuffer(this.total) : _parts = List<String?>.filled(total, null);
+
   final int total;
   final List<String?> _parts;
   int _received = 0;

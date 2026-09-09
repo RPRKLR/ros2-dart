@@ -40,6 +40,10 @@ export 'src/messages/std_msgs.dart';
 export 'src/protocol/opcodes.dart' show Compression, StatusLevel;
 export 'src/protocol/qos.dart'
     show Durability, History, Liveliness, QosProfile, Reliability;
+export 'src/tf/tf_buffer.dart' show TfBuffer, TfException;
+export 'src/tf/tf_listener.dart' show TfListener;
+export 'src/tf/transform_math.dart'
+    show PointMath, QuaternionMath, TransformMath, Vector3Math;
 export 'src/transport/transport.dart'
     show RosConnectionState, ReconnectPolicy, RosTransport;
 export 'src/transport/websocket_transport.dart' show WebSocketTransport;

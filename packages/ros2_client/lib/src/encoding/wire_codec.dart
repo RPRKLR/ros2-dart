@@ -105,9 +105,18 @@ abstract final class WireCodec {
 
   /// Encodes an outbound command as JSON text.
   ///
-  /// Outbound traffic is command-shaped (small), so JSON keeps the wire
-  /// human-inspectable with no measurable cost.
-  static String encode(Map<String, Object?> command) => jsonEncode(command);
+  /// Non-finite doubles are written as `null`, because `jsonEncode` throws on
+  /// them outright — and ROS produces them constantly, so without this,
+  /// republishing a `LaserScan` whose out-of-range beams are `inf` crashes.
+  /// `null` is also exactly what rosbridge itself puts on the wire for a
+  /// non-finite float, so this matches the encoding on the way back in.
+  static String encode(Map<String, Object?> command) =>
+      jsonEncode(command, toEncodable: _encodable);
+
+  static Object? _encodable(Object? value) {
+    if (value is double && !value.isFinite) return null;
+    return value;
+  }
 
   static Map<String, Object?> _asStringMap(Object? value) {
     if (value is! Map) {
