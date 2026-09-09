@@ -1,4 +1,4 @@
-# ROS 2 for Dart and Flutter
+# ROS 2 for Dart & Flutter
 
 A type-safe ROS 2 client and widget toolkit, talking to robots through
 [`rosbridge_suite`](https://github.com/RobotWebTools/rosbridge_suite) over a
@@ -9,6 +9,8 @@ iOS, Linux, macOS, Windows and the web.
 |---|---|
 | [`packages/ros2_client`](packages/ros2_client) | Pure-Dart client: topics, services, actions, parameters, introspection |
 | [`packages/ros2_flutter`](packages/ros2_flutter) | Flutter widgets: connection lifecycle, camera, lidar, teleop |
+
+Repo: <https://github.com/RPRKLR/ros2-dart>
 
 See **[docs/ROADMAP.md](docs/ROADMAP.md)** for the plan and the state of the
 pub.dev landscape this targets.
