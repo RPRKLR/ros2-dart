@@ -1,3 +1,4 @@
+import 'bundled_types.dart';
 import 'interface_def.dart';
 
 /// Generates Dart source from parsed ROS interface definitions.
@@ -173,19 +174,27 @@ abstract final class DartEmitter {
         _ => null,
       };
 
+  /// The Dart name for a *field's* type, deferring to the client's bundled
+  /// classes when [resolver] says the type is already provided.
+  ///
+  /// Distinct from [className], which names the class being declared and must
+  /// never be qualified with an import prefix.
+  static String fieldClassName(String rosType, [TypeResolver? resolver]) =>
+      resolver?.providedName(rosType) ?? className(rosType);
+
   /// The Dart type for a field, including array wrapping.
-  static String dartTypeOf(FieldDef field) {
+  static String dartTypeOf(FieldDef field, [TypeResolver? resolver]) {
     final scalar = scalarDartType(field.type);
     if (!field.isArray) {
-      return scalar ?? className(field.type);
+      return scalar ?? fieldClassName(field.type, resolver);
     }
     final typed = typedListFor(field.type);
     if (typed != null) return typed;
-    return 'List<${scalar ?? className(field.type)}>';
+    return 'List<${scalar ?? fieldClassName(field.type, resolver)}>';
   }
 
   /// The `Field.*` expression that decodes this field from JSON.
-  static String decodeExpr(FieldDef field) {
+  static String decodeExpr(FieldDef field, [TypeResolver? resolver]) {
     final key = "'${field.name}'";
     if (field.isArray) {
       final typed = typedListFor(field.type);
@@ -211,7 +220,7 @@ abstract final class DartEmitter {
       if (scalar == 'bool') return 'Field.asBoolList(json[$key])';
       // An explicit type argument: inference cannot resolve it from a
       // constructor tear-off alone.
-      final element = className(field.type);
+      final element = fieldClassName(field.type, resolver);
       return 'Field.asList<$element>(json[$key], $element.fromJson)';
     }
 
@@ -220,12 +229,13 @@ abstract final class DartEmitter {
       'int' => 'Field.asInt(json[$key])',
       'double' => 'Field.asDouble(json[$key])',
       'String' => 'Field.asString(json[$key])',
-      _ => 'Field.asMessage(json[$key], ${className(field.type)}.fromJson)',
+      _ => 'Field.asMessage(json[$key], '
+          '${fieldClassName(field.type, resolver)}.fromJson)',
     };
   }
 
   /// The expression that encodes this field back to JSON.
-  static String encodeExpr(FieldDef field) {
+  static String encodeExpr(FieldDef field, [TypeResolver? resolver]) {
     final name = fieldName(field.name);
     if (field.isArray) {
       final typed = typedListFor(field.type);
@@ -233,7 +243,8 @@ abstract final class DartEmitter {
       if (typed != null) return 'Field.encodeNumbers($name)';
       // Scalar lists serialise as themselves; only message lists need toJson.
       if (scalarDartType(field.type) != null) return name;
-      return '$name.map((${className(field.type)} e) => e.toJson()).toList()';
+      return '$name.map((${fieldClassName(field.type, resolver)} e) => '
+          'e.toJson()).toList()';
     }
     if (scalarDartType(field.type) != null) return name;
     return '$name.toJson()';
@@ -327,7 +338,7 @@ abstract final class DartEmitter {
   }
 
   /// The fallback expression used by a `??` initialiser.
-  static String fallbackFor(FieldDef field) {
+  static String fallbackFor(FieldDef field, [TypeResolver? resolver]) {
     if (field.isArray) {
       final typed = typedListFor(field.type);
       if (typed != null) {
@@ -341,6 +352,7 @@ abstract final class DartEmitter {
       }
       return 'const []';
     }
-    return '${className(field.type)}()';
+    return resolver?.providedFallback(field.type) ??
+        '${className(field.type)}()';
   }
 }

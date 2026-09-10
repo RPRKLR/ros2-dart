@@ -209,6 +209,36 @@ reuses type names across packages (`geometry_msgs/Pose` and
 Verified on 136 messages across 12 real ROS packages, plus nav2_msgs'
 11 services and 15 actions.
 
+### Bundled types are not regenerated
+
+`ros2_client` already ships `std_msgs`, `geometry_msgs`, `sensor_msgs` and
+`nav_msgs` core types. Generating a package that references them — and almost
+every package references `std_msgs/Header` — emits a reference to the bundled
+class rather than a second copy:
+
+```dart
+import 'package:ros2_client/codegen_support.dart';
+import 'package:ros2_client/ros2_client.dart' as ros2;
+
+final class Costmap implements RosMessage {
+  final ros2.Header header;   // the class you already had
+  ...
+}
+```
+
+This is not just tidiness. Two classes registering a codec for one ROS type
+name shadow each other — `MessageRegistry.byRosType` resolves to whichever
+registered last — and the widgets in `ros2_flutter` are typed against the
+bundled classes, so they cannot accept a generated `LaserScan`. A package whose
+referenced types are *entirely* bundled is not generated at all.
+
+The barrel is imported under a prefix, because it exports plenty of
+non-message names (`Ros2Client`, `TfBuffer`, `Compression`) that a custom ROS
+package is free to collide with.
+
+Pass `--no-bundled` for a fully self-contained set that depends on nothing but
+`codegen_support.dart`.
+
 ### Generating from a live robot
 
 With `--from-robot` the definitions come from the robot's own `rosapi` node

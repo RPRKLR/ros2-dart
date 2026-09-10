@@ -310,19 +310,26 @@ int32 x
     });
 
     test('service parts contribute to dependency analysis', () {
-      final writer = LibraryWriter(
-        package: 'nav_msgs',
-        messages: const [],
-        services: [
-          InterfaceParser.parseService(
-            'string map_url\n---\nnav_msgs/OccupancyGrid map\n'
-            'builtin_interfaces/Time stamp\n',
+      LibraryWriter writer({required bool useBundled}) => LibraryWriter(
             package: 'nav_msgs',
-            name: 'LoadMap',
-          ),
-        ],
-      );
-      expect(writer.referencedPackages, contains('builtin_interfaces'));
+            messages: const [],
+            useBundled: useBundled,
+            services: [
+              InterfaceParser.parseService(
+                'string map_url\n---\nnav_msgs/OccupancyGrid map\n'
+                'builtin_interfaces/Time stamp\nnav_msgs/Foo extra\n',
+                package: 'nav_msgs',
+                name: 'LoadMap',
+              ),
+            ],
+          );
+
+      // builtin_interfaces/Time is bundled with the client, so by default it
+      // is not a package that needs generating.
+      expect(writer(useBundled: true).referencedPackages,
+          isNot(contains('builtin_interfaces')));
+      expect(writer(useBundled: false).referencedPackages,
+          contains('builtin_interfaces'));
     });
   });
 
@@ -370,15 +377,23 @@ int32 x
     });
 
     test('reports cross-package references for transitive generation', () {
-      final writer = LibraryWriter(
-        package: 'visualization_msgs',
-        messages: [
-          parse('std_msgs/Header header\nbuiltin_interfaces/Duration lifetime',
-              pkg: 'visualization_msgs', name: 'Marker'),
-        ],
-      );
-      expect(writer.referencedPackages,
-          containsAll(['std_msgs', 'builtin_interfaces']));
+      LibraryWriter writer({required bool useBundled}) => LibraryWriter(
+            package: 'visualization_msgs',
+            useBundled: useBundled,
+            messages: [
+              parse(
+                  'std_msgs/Header header\n'
+                  'builtin_interfaces/Duration lifetime\n'
+                  'shape_msgs/Mesh mesh',
+                  pkg: 'visualization_msgs',
+                  name: 'Marker'),
+            ],
+          );
+
+      // Only the package that is not already provided needs generating.
+      expect(writer(useBundled: true).referencedPackages, ['shape_msgs']);
+      expect(writer(useBundled: false).referencedPackages,
+          containsAll(['std_msgs', 'builtin_interfaces', 'shape_msgs']));
     });
 
     test('escapes angle brackets in doc comments', () {
@@ -400,6 +415,94 @@ int32 x
       expect(code, contains('void registerTestMsgs()'));
       expect(code, contains('MessageRegistry.register'));
       expect(code, contains('bool _listEquals'));
+    });
+  });
+
+  group('writer: bundled types', () {
+    String emitPkg(String source,
+            {String pkg = 'my_msgs',
+            String name = 'T',
+            bool useBundled = true}) =>
+        LibraryWriter(
+          package: pkg,
+          useBundled: useBundled,
+          messages: [parse(source, pkg: pkg, name: name)],
+        ).write();
+
+    test('refers to a bundled type through a prefixed client import', () {
+      final code = emitPkg('geometry_msgs/Twist command');
+
+      expect(code,
+          contains("import 'package:ros2_client/ros2_client.dart' as ros2;"));
+      expect(code, contains('final ros2.Twist command;'));
+      expect(code, contains('ros2.Twist.fromJson'));
+      // And it must not emit its own copy of the class.
+      expect(code, isNot(contains('final class Twist ')));
+    });
+
+    test('does not import the barrel when no bundled type is used', () {
+      final code = emitPkg('float64 x\nmy_msgs/Other other');
+      expect(code,
+          isNot(contains("import 'package:ros2_client/ros2_client.dart'")));
+    });
+
+    test('omits a bundled message from the library and its registration', () {
+      final writer = LibraryWriter(
+        package: 'geometry_msgs',
+        messages: [
+          parse('float64 x\nfloat64 y\nfloat64 z',
+              pkg: 'geometry_msgs', name: 'Point'),
+          parse('float64 x\nfloat64 y', pkg: 'geometry_msgs', name: 'Point2D'),
+        ],
+      );
+      final code = writer.write();
+
+      // Point is bundled; Point2D is not.
+      expect(code, isNot(contains('final class Point ')));
+      expect(code, isNot(contains("rosType: 'geometry_msgs/msg/Point'")));
+      expect(code, contains('final class Point2D '));
+      expect(writer.emittedMessageCount, 1);
+    });
+
+    test('is empty when every message is already provided', () {
+      final writer = LibraryWriter(
+        package: 'geometry_msgs',
+        messages: [
+          parse('float64 x', pkg: 'geometry_msgs', name: 'Point'),
+          parse('float64 x', pkg: 'geometry_msgs', name: 'Vector3'),
+        ],
+      );
+      expect(writer.isEmpty, isTrue);
+    });
+
+    test('uses fromJson for a bundled type with no zero-arg constructor', () {
+      // sensor_msgs/Image is required-arg because Uint8List has no const
+      // empty; `ros2.RosImage()` would not compile.
+      final code = emitPkg('sensor_msgs/Image picture');
+      expect(code, contains('ros2.RosImage.fromJson(const {})'));
+
+      // Quaternion has a zero-arg constructor whose w defaults to 1, so it
+      // must NOT go through fromJson, which would give an invalid rotation.
+      final quat = emitPkg('geometry_msgs/Quaternion q');
+      expect(quat, contains('ros2.Quaternion()'));
+      expect(quat, isNot(contains('ros2.Quaternion.fromJson(const {})')));
+    });
+
+    test('handles an array of a bundled type', () {
+      final code = emitPkg('geometry_msgs/Point[] points');
+      expect(code, contains('List<ros2.Point> points'));
+      expect(code,
+          contains('Field.asList<ros2.Point>(json[\'points\'], '
+              'ros2.Point.fromJson)'));
+      expect(code, contains('points.map((ros2.Point e) => e.toJson())'));
+    });
+
+    test('--no-bundled restores a fully self-contained library', () {
+      final code = emitPkg('geometry_msgs/Twist command', useBundled: false);
+      expect(code,
+          isNot(contains("import 'package:ros2_client/ros2_client.dart'")));
+      expect(code, contains('final Twist command;'));
+      expect(code, contains("import 'geometry_msgs.dart';"));
     });
   });
 }

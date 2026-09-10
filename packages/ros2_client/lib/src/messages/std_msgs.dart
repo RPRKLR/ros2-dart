@@ -112,7 +112,7 @@ final class Header implements RosMessage {
 /// `std_msgs/msg/String`.
 @immutable
 final class StringMsg implements RosMessage {
-  const StringMsg(this.data);
+  const StringMsg([this.data = '']);
 
   factory StringMsg.fromJson(Map<String, Object?> json) =>
       StringMsg(Field.asString(json['data']));
@@ -138,7 +138,7 @@ final class StringMsg implements RosMessage {
 /// `std_msgs/msg/Bool`.
 @immutable
 final class BoolMsg implements RosMessage {
-  const BoolMsg(this.data);
+  const BoolMsg([this.data = false]);
   factory BoolMsg.fromJson(Map<String, Object?> json) =>
       BoolMsg(Field.asBool(json['data']));
   final bool data;
@@ -155,7 +155,7 @@ final class BoolMsg implements RosMessage {
 /// `std_msgs/msg/Int32`.
 @immutable
 final class Int32Msg implements RosMessage {
-  const Int32Msg(this.data);
+  const Int32Msg([this.data = 0]);
   factory Int32Msg.fromJson(Map<String, Object?> json) =>
       Int32Msg(Field.asInt(json['data']));
   final int data;
@@ -172,7 +172,7 @@ final class Int32Msg implements RosMessage {
 /// `std_msgs/msg/Float64`.
 @immutable
 final class Float64Msg implements RosMessage {
-  const Float64Msg(this.data);
+  const Float64Msg([this.data = 0]);
   factory Float64Msg.fromJson(Map<String, Object?> json) =>
       Float64Msg(Field.asDouble(json['data']));
   final double data;

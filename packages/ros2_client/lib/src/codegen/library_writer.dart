@@ -1,3 +1,4 @@
+import 'bundled_types.dart';
 import 'dart_emitter.dart';
 import 'interface_def.dart';
 
@@ -8,7 +9,14 @@ final class LibraryWriter {
     required this.messages,
     this.services = const [],
     this.actions = const [],
-  });
+    this.useBundled = true,
+  }) : _resolver = TypeResolver(package: package, useBundled: useBundled);
+
+  /// Whether to defer to the message types `ros2_client` already provides,
+  /// rather than emitting a second copy of each. See [BundledTypes].
+  final bool useBundled;
+
+  final TypeResolver _resolver;
 
   /// The ROS package these messages belong to, e.g. `sensor_msgs`.
   final String package;
@@ -19,10 +27,29 @@ final class LibraryWriter {
   /// Every message body in this library, including the request/response and
   /// goal/result/feedback parts synthesised from services and actions.
   List<MessageDef> get _allMessages => [
-        ...messages,
+        // A bundled type is not re-emitted: two classes registering a codec
+        // for one ROS type name would leave `MessageRegistry.byRosType`
+        // resolving to whichever was registered last.
+        for (final m in messages)
+          if (!_resolver.isProvided(m.rosType)) m,
         for (final s in services) ...[s.request, s.response],
         for (final a in actions) ...[a.goal, a.result, a.feedback],
       ];
+
+  /// Bundled types these messages reference, so the header knows whether the
+  /// client barrel needs importing at all.
+  bool get _usesBundled => _allMessages.any((m) => m.fields.any((f) =>
+      DartEmitter.scalarDartType(f.type) == null &&
+      _resolver.isProvided(f.type)));
+
+  /// Message bodies actually written, which is fewer than [messages] when
+  /// bundled types are excluded.
+  int get emittedMessageCount => _allMessages.length;
+
+  /// True when nothing is left to emit once bundled types are excluded --
+  /// a package referenced only for types the client already provides.
+  bool get isEmpty =>
+      _allMessages.isEmpty && services.isEmpty && actions.isEmpty;
 
   /// Emits the complete `.dart` source for [package].
   String write() {
@@ -49,10 +76,16 @@ final class LibraryWriter {
         ..writeln("import 'dart:typed_data';")
         ..writeln();
     }
-    // The minimal surface, not the full barrel: importing ros2_client.dart
-    // would make a generated `sensor_msgs/Image` ambiguous with the bundled
-    // one wherever both are in scope.
+    // The minimal surface, which exports no message classes. The barrel is
+    // imported separately and under a prefix, so a generated type can never be
+    // ambiguous with a bundled one.
     out.writeln("import 'package:ros2_client/codegen_support.dart';");
+    if (_usesBundled) {
+      // Prefixed: the barrel exports plenty of non-message names, and a custom
+      // ROS package is free to define a message that collides with one.
+      out.writeln("import 'package:ros2_client/ros2_client.dart' "
+          "as ${_resolver.prefix};");
+    }
     for (final dep in deps) {
       out.writeln("import '$dep.dart';");
     }
@@ -78,6 +111,7 @@ final class LibraryWriter {
     for (final message in _allMessages) {
       for (final field in message.fields) {
         if (DartEmitter.scalarDartType(field.type) != null) continue;
+        if (_resolver.isProvided(field.type)) continue;
         final parts = field.type.split('/');
         final pkg = parts.length > 1 ? parts.first : package;
         types.add('$pkg/${parts.last}');
@@ -92,15 +126,16 @@ final class LibraryWriter {
     for (final message in _allMessages) {
       for (final field in message.fields) {
         if (DartEmitter.scalarDartType(field.type) != null) continue;
+        if (_resolver.isProvided(field.type)) continue;
         final parts = field.type.split('/');
         if (parts.length < 2) continue;
         if (parts.first != package) deps.add(parts.first);
       }
     }
-    // std_msgs and builtin_interfaces used to be skipped here, on the
-    // assumption that the client barrel supplied them. Generated code now
-    // imports only codegen_support.dart, which exports no message classes, so
-    // every referenced package must be imported and generated like any other.
+    // Only packages with at least one type the client does not already
+    // provide reach this list. A package whose referenced types are entirely
+    // bundled -- std_msgs when all that is used is Header -- needs no
+    // generated library at all.
     final sorted = deps.toList()..sort();
     return sorted;
   }
@@ -146,7 +181,7 @@ final class LibraryWriter {
       for (final field in fields) {
         final dart = DartEmitter.fieldName(field.name);
         if (needsInitialiser[field.name]!) {
-          out.writeln('    ${DartEmitter.dartTypeOf(field)}? $dart,');
+          out.writeln('    ${DartEmitter.dartTypeOf(field, _resolver)}? $dart,');
         } else {
           out.writeln(
               '    this.$dart = ${DartEmitter.constDefaultFor(field)},');
@@ -156,7 +191,7 @@ final class LibraryWriter {
       final initialisers = fields
           .where((f) => needsInitialiser[f.name]!)
           .map((f) =>
-              '${DartEmitter.fieldName(f.name)} = ${DartEmitter.fieldName(f.name)} ?? ${DartEmitter.fallbackFor(f)}')
+              '${DartEmitter.fieldName(f.name)} = ${DartEmitter.fieldName(f.name)} ?? ${DartEmitter.fallbackFor(f, _resolver)}')
           .toList();
       if (initialisers.isEmpty) {
         out.writeln(';');
@@ -173,7 +208,7 @@ final class LibraryWriter {
         '  factory $name.fromJson(Map<String, Object?> json) => $name(');
     for (final field in fields) {
       out.writeln(
-          '        ${DartEmitter.fieldName(field.name)}: ${DartEmitter.decodeExpr(field)},');
+          '        ${DartEmitter.fieldName(field.name)}: ${DartEmitter.decodeExpr(field, _resolver)},');
     }
     out
       ..writeln('      );')
@@ -208,7 +243,7 @@ final class LibraryWriter {
         out.writeln('  /// At most ${field.arraySize} elements.');
       }
       out.writeln(
-          '  final ${DartEmitter.dartTypeOf(field)} ${DartEmitter.fieldName(field.name)};');
+          '  final ${DartEmitter.dartTypeOf(field, _resolver)} ${DartEmitter.fieldName(field.name)};');
     }
     out.writeln();
 
@@ -221,7 +256,7 @@ final class LibraryWriter {
       ..writeln('  @override')
       ..writeln('  Map<String, Object?> toJson() => {');
     for (final field in fields) {
-      out.writeln("        '${field.name}': ${DartEmitter.encodeExpr(field)},");
+      out.writeln("        '${field.name}': ${DartEmitter.encodeExpr(field, _resolver)},");
     }
     out
       ..writeln('      };')

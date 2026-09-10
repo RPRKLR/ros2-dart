@@ -10,6 +10,7 @@
 import 'dart:io';
 
 import 'package:ros2_client/ros2_client.dart';
+import 'package:ros2_client/src/codegen/bundled_types.dart';
 import 'package:ros2_client/src/codegen/interface_def.dart';
 import 'package:ros2_client/src/codegen/interface_parser.dart';
 import 'package:ros2_client/src/codegen/library_writer.dart';
@@ -25,6 +26,7 @@ Future<void> main(List<String> args) async {
   final searchRoots = <String>[];
   final packages = <String>[];
   Uri? robot;
+  var useBundled = true;
 
   for (var i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -32,6 +34,8 @@ Future<void> main(List<String> args) async {
         outDir = args[++i];
       case '--search' || '-s':
         searchRoots.add(args[++i]);
+      case '--no-bundled':
+        useBundled = false;
       case '--from-robot' || '-r':
         robot = Uri.tryParse(args[++i]);
         if (robot == null || !robot.hasScheme) {
@@ -48,7 +52,7 @@ Future<void> main(List<String> args) async {
   }
 
   if (robot != null) {
-    exit(await _generateFromRobot(robot, packages, outDir));
+    exit(await _generateFromRobot(robot, packages, outDir, useBundled));
   }
 
   searchRoots.addAll(_rosSearchRoots());
@@ -71,7 +75,9 @@ Future<void> main(List<String> args) async {
   final generated = <String>[];
 
   /// Fully qualified type names actually emitted, and those referenced.
-  final allTypes = <String>{};
+  // Bundled types count as available: they are provided by the client rather
+  // than generated, so referencing one is not a missing definition.
+  final allTypes = <String>{if (useBundled) ...BundledTypes.dartNames.keys};
   final emitted = <String, Set<String>>{};
 
   while (queue.isNotEmpty) {
@@ -140,10 +146,15 @@ Future<void> main(List<String> args) async {
       messages: messages,
       services: services,
       actions: actions,
+      useBundled: useBundled,
     );
+    if (writer.isEmpty) {
+      stdout.writeln('   $package: entirely provided by ros2_client, skipped');
+      continue;
+    }
     final target = File('$outDir/$package.dart')
       ..writeAsStringSync(writer.write());
-    totalMessages += messages.length;
+    totalMessages += writer.emittedMessageCount;
     generated.add(package);
 
     for (final message in messages) {
@@ -161,7 +172,7 @@ Future<void> main(List<String> args) async {
     emitted[package] = writer.referencedTypes;
 
     final summary = [
-      '${messages.length} messages',
+      '${writer.emittedMessageCount} messages',
       if (services.isNotEmpty) '${services.length} services',
       if (actions.isNotEmpty) '${actions.length} actions',
     ].join(', ');
@@ -210,8 +221,8 @@ Future<void> main(List<String> args) async {
 /// With no packages named, this generates exactly the interfaces the robot is
 /// actually using — the types on its live topics, services and action servers
 /// — which is usually what you want and is far smaller than whole packages.
-Future<int> _generateFromRobot(
-    Uri uri, List<String> packages, String outDir) async {
+Future<int> _generateFromRobot(Uri uri, List<String> packages, String outDir,
+    bool useBundled) async {
   final client = Ros2Client(uri, reconnectPolicy: ReconnectPolicy.none);
   stdout.writeln('Connecting to $uri ...');
   try {
@@ -248,8 +259,9 @@ Future<int> _generateFromRobot(
 
   final output = Directory(outDir)..createSync(recursive: true);
   final generated = <String>[];
-  final allTypes = <String>{};
+  final allTypes = <String>{if (useBundled) ...BundledTypes.dartNames.keys};
   final referenced = <String, Set<String>>{};
+  var emitted = 0;
 
   for (final package in harvest.packages) {
     final messages = harvest.messagesFor(package);
@@ -260,7 +272,10 @@ Future<int> _generateFromRobot(
       messages: messages,
       services: services,
       actions: actions,
+      useBundled: useBundled,
     );
+    // Everything this package contributed is already in the client.
+    if (writer.isEmpty) continue;
     File('$outDir/$package.dart').writeAsStringSync(writer.write());
     generated.add(package);
     referenced[package] = writer.referencedTypes;
@@ -278,7 +293,9 @@ Future<int> _generateFromRobot(
         ..add('$package/${action.result.name}')
         ..add('$package/${action.feedback.name}');
     }
-    stdout.writeln('   $outDir/$package.dart  (${messages.length} messages)');
+    emitted += writer.emittedMessageCount;
+    stdout.writeln(
+        '   $outDir/$package.dart  (${writer.emittedMessageCount} messages)');
   }
 
   generated.sort();
@@ -315,7 +332,7 @@ Future<int> _generateFromRobot(
     stderr.writeln('!    dart run ros2_client:generate -o $outDir $all');
   }
 
-  stdout.writeln('\nGenerated ${harvest.messageCount} messages into $outDir');
+  stdout.writeln('\nGenerated $emitted messages into $outDir');
   stdout.writeln('Run `dart format $outDir` to tidy the output.');
   return harvest.problems.isEmpty && missing.isEmpty ? 0 : 70;
 }
@@ -480,6 +497,9 @@ Options:
                        rosbridge instead of from disk. Needs no ROS install.
                        With no packages named, generates exactly the types the
                        robot is currently using.
+      --no-bundled     Emit every type, including the ones ros2_client already
+                       provides. Off by default: two classes registering a
+                       codec for one ROS type name shadow each other.
   -h, --help           Show this help.
 
 Examples:
