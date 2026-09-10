@@ -136,8 +136,8 @@ extension Ros2Introspection on Ros2Client {
   /// Every interface type the robot knows about, e.g. `sensor_msgs/msg/Image`.
   Future<List<String>> listInterfaces(
       {Duration timeout = graphQueryTimeout}) async {
-    final res = await callServiceJson('/rosapi/interfaces', const {},
-        timeout: timeout);
+    final res =
+        await callServiceJson('/rosapi/interfaces', const {}, timeout: timeout);
     return _strings(res['interfaces']);
   }
 

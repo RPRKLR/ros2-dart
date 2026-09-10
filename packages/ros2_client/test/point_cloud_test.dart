@@ -30,7 +30,9 @@ PointCloud2 xyzCloud(int count,
       PointField(name: 'y', offset: 4, datatype: PointField.float32),
       PointField(name: 'z', offset: 8, datatype: PointField.float32),
     ],
-    data: truncateTo == null ? bytes : Uint8List.sublistView(bytes, 0, truncateTo),
+    data: truncateTo == null
+        ? bytes
+        : Uint8List.sublistView(bytes, 0, truncateTo),
   );
 }
 
@@ -95,7 +97,8 @@ void main() {
         pointStep: 20,
         fields: const [
           PointField(name: 'x', offset: 0, datatype: PointField.float32),
-          PointField(name: 'intensity', offset: 16, datatype: PointField.uint16),
+          PointField(
+              name: 'intensity', offset: 16, datatype: PointField.uint16),
         ],
         data: bytes,
       );
@@ -178,8 +181,8 @@ void main() {
           ],
           data: Uint8List(8),
         ).reader(),
-        throwsA(isA<PointCloudFormatException>().having(
-            (e) => e.message, 'message', contains('spans bytes'))),
+        throwsA(isA<PointCloudFormatException>()
+            .having((e) => e.message, 'message', contains('spans bytes'))),
       );
     });
 
@@ -191,8 +194,8 @@ void main() {
           fields: const [PointField(name: 'x', offset: 0, datatype: 99)],
           data: Uint8List(8),
         ).reader(),
-        throwsA(isA<PointCloudFormatException>().having(
-            (e) => e.message, 'message', contains('datatype 99'))),
+        throwsA(isA<PointCloudFormatException>()
+            .having((e) => e.message, 'message', contains('datatype 99'))),
       );
     });
 
@@ -210,7 +213,8 @@ void main() {
         width: 1,
         pointStep: 4,
         fields: const [
-          PointField(name: 'intensity', offset: 0, datatype: PointField.float32),
+          PointField(
+              name: 'intensity', offset: 0, datatype: PointField.float32),
         ],
         data: Uint8List(4),
       );

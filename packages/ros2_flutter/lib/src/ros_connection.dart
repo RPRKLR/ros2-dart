@@ -67,9 +67,8 @@ class RosConnection extends StatefulWidget {
     return client;
   }
 
-  static Ros2Client? maybeOf(BuildContext context) => context
-      .dependOnInheritedWidgetOfExactType<_RosScope>()
-      ?.client;
+  static Ros2Client? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_RosScope>()?.client;
 
   /// The [TfListener] shared by everything under the nearest [RosConnection],
   /// started on first use and stopped when the connection is disposed.

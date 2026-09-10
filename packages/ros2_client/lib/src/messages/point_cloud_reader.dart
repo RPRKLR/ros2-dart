@@ -187,9 +187,7 @@ final class PointCloudReader {
     if (element < 0 || element >= count) {
       throw RangeError.index(element, field, 'element', null, count);
     }
-    return index * cloud.pointStep +
-        field.offset +
-        element * field.elementSize;
+    return index * cloud.pointStep + field.offset + element * field.elementSize;
   }
 
   @override

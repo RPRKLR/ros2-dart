@@ -181,7 +181,8 @@ final class LibraryWriter {
       for (final field in fields) {
         final dart = DartEmitter.fieldName(field.name);
         if (needsInitialiser[field.name]!) {
-          out.writeln('    ${DartEmitter.dartTypeOf(field, _resolver)}? $dart,');
+          out.writeln(
+              '    ${DartEmitter.dartTypeOf(field, _resolver)}? $dart,');
         } else {
           out.writeln(
               '    this.$dart = ${DartEmitter.constDefaultFor(field)},');
@@ -256,7 +257,8 @@ final class LibraryWriter {
       ..writeln('  @override')
       ..writeln('  Map<String, Object?> toJson() => {');
     for (final field in fields) {
-      out.writeln("        '${field.name}': ${DartEmitter.encodeExpr(field, _resolver)},");
+      out.writeln(
+          "        '${field.name}': ${DartEmitter.encodeExpr(field, _resolver)},");
     }
     out
       ..writeln('      };')

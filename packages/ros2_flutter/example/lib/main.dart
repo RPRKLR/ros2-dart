@@ -55,16 +55,17 @@ class ControlPanel extends StatelessWidget {
             builder: (context, constraints) {
               final wide = constraints.maxWidth > 720;
               final panels = [
-                const Expanded(child: _Card(title: 'Camera', child: RosCameraView())),
-                const Expanded(child: _Card(title: 'Lidar', child: RosLaserScanView())),
+                const Expanded(
+                    child: _Card(title: 'Camera', child: RosCameraView())),
+                const Expanded(
+                    child: _Card(title: 'Lidar', child: RosLaserScanView())),
               ];
               return Column(
                 children: [
                   const _Telemetry(),
                   Expanded(
-                    child: wide
-                        ? Row(children: panels)
-                        : Column(children: panels),
+                    child:
+                        wide ? Row(children: panels) : Column(children: panels),
                   ),
                   const Padding(
                     padding: EdgeInsets.all(16),

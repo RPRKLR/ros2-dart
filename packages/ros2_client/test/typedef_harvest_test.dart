@@ -34,8 +34,7 @@ void main() {
   test('groups a closure by package', () {
     final harvest = TypedefHarvest()..addMessages(laserScanClosure);
 
-    expect(harvest.packages,
-        ['builtin_interfaces', 'sensor_msgs', 'std_msgs']);
+    expect(harvest.packages, ['builtin_interfaces', 'sensor_msgs', 'std_msgs']);
     expect(harvest.messagesFor('sensor_msgs').single.name, 'LaserScan');
     expect(harvest.messagesFor('std_msgs').single.name, 'Header');
     expect(harvest.messageCount, 3);

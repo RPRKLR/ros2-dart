@@ -964,8 +964,7 @@ final class Ros2Client {
   static void _rejectFragmentedBinary(
       String topic, Compression compression, int? fragmentSize) {
     if (fragmentSize == null) return;
-    if (compression != Compression.cbor &&
-        compression != Compression.cborRaw) {
+    if (compression != Compression.cbor && compression != Compression.cborRaw) {
       return;
     }
     throw ArgumentError.value(

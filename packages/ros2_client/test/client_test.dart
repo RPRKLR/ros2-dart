@@ -375,7 +375,6 @@ void main() {
     });
   });
 
-
   group('losing the connection', () {
     test('states does not lose the connected transition', () async {
       // Subscribing and connecting in the same turn is the Flutter shape:
@@ -384,8 +383,7 @@ void main() {
       // drops everything in between, leaving the UI on "connecting" forever.
       final own = FakeBridge();
       final client = Ros2Client(Uri.parse('ws://fake:9090'),
-          transportFactory: (_) => own,
-          reconnectPolicy: ReconnectPolicy.none);
+          transportFactory: (_) => own, reconnectPolicy: ReconnectPolicy.none);
       addTearDown(client.close);
 
       final seen = <RosConnectionState>[];
@@ -465,7 +463,6 @@ void main() {
     });
   });
 
-
   group('buffering while offline', () {
     test('the outbox drops the oldest, not the newest', () async {
       await connect();
@@ -483,7 +480,9 @@ void main() {
       final kept = <String>[];
       for (final command in _outboxOf(ros)) {
         final msg = command['msg'];
-        if (msg is Map && msg['data'] is String) kept.add(msg['data'] as String);
+        if (msg is Map && msg['data'] is String) {
+          kept.add(msg['data'] as String);
+        }
       }
       expect(kept, hasLength(Ros2Client.maxOutbox));
       expect(kept.last, '299', reason: 'the newest command must survive');
@@ -601,8 +600,8 @@ void main() {
       // corrupt message; the repeated index is the only signal there is.
       final a = frame('AAAA');
       final b = frame('BBBB');
-      void fragment(String body, int index, int total) => bridge.emit(
-          jsonEncode({
+      void fragment(String body, int index, int total) =>
+          bridge.emit(jsonEncode({
             'op': 'fragment',
             'id': '0',
             'num': index,
@@ -610,8 +609,14 @@ void main() {
             'data': body,
           }));
 
-      final aHalves = [a.substring(0, a.length ~/ 2), a.substring(a.length ~/ 2)];
-      final bHalves = [b.substring(0, b.length ~/ 2), b.substring(b.length ~/ 2)];
+      final aHalves = [
+        a.substring(0, a.length ~/ 2),
+        a.substring(a.length ~/ 2)
+      ];
+      final bHalves = [
+        b.substring(0, b.length ~/ 2),
+        b.substring(b.length ~/ 2)
+      ];
 
       fragment(aHalves[0], 0, 2);
       fragment(bHalves[0], 0, 2); // second message starts under the same id
@@ -620,8 +625,7 @@ void main() {
 
       // The complete message is B; A was abandoned mid-flight.
       expect(seen.map((m) => m.data), ['BBBB']);
-      expect(statuses.map((s) => s.message).join(),
-          contains('same id'));
+      expect(statuses.map((s) => s.message).join(), contains('same id'));
     });
 
     test('a clean fragmented message still reassembles', () async {
@@ -662,15 +666,14 @@ void main() {
       // substitutes msg with {secs, nsecs, bytes} holding raw CDR. With no CDR
       // decoder every field reads back as its type default, forever, silently.
       expect(
-        () => ros.subscribe<LaserScan>('/scan',
-            compression: Compression.cborRaw),
-        throwsA(isA<ArgumentError>().having((e) => e.message, 'message',
-            contains('raw CDR blob'))),
+        () =>
+            ros.subscribe<LaserScan>('/scan', compression: Compression.cborRaw),
+        throwsA(isA<ArgumentError>()
+            .having((e) => e.message, 'message', contains('raw CDR blob'))),
       );
 
       // The untyped API can still ask for it and read the bytes itself.
-      expect(
-          () => ros.subscribeJson('/scan', compression: Compression.cborRaw),
+      expect(() => ros.subscribeJson('/scan', compression: Compression.cborRaw),
           returnsNormally);
     });
 
@@ -680,8 +683,12 @@ void main() {
       final statuses = <RosStatus>[];
       ros.status.listen(statuses.add);
 
-      ros.subscribe<LaserScan>('/scan', compression: Compression.none).listen((_) {});
-      ros.subscribe<LaserScan>('/scan', compression: Compression.cbor).listen((_) {});
+      ros
+          .subscribe<LaserScan>('/scan', compression: Compression.none)
+          .listen((_) {});
+      ros
+          .subscribe<LaserScan>('/scan', compression: Compression.cbor)
+          .listen((_) {});
       await pump();
 
       // rosbridge applies one compression per topic, taking the strongest.
@@ -728,9 +735,8 @@ void main() {
     test('buffer delivers every message, in order', () async {
       await connect();
       final seen = <double>[];
-      final sub = ros
-          .subscribe<LaserScan>('/scan')
-          .listen((s) => seen.add(s.angleMin));
+      final sub =
+          ros.subscribe<LaserScan>('/scan').listen((s) => seen.add(s.angleMin));
       await pump();
 
       sub.pause();
@@ -891,8 +897,7 @@ void main() {
           () => ros.subscribe<RosImage>('/a',
               compression: Compression.none, fragmentSize: 65536),
           returnsNormally);
-      expect(
-          () => ros.subscribe<RosImage>('/b', compression: Compression.cbor),
+      expect(() => ros.subscribe<RosImage>('/b', compression: Compression.cbor),
           returnsNormally);
     });
 
@@ -908,8 +913,7 @@ void main() {
       );
       addTearDown(other.close);
 
-      expect(
-          () => other.subscribe<RosImage>('/camera', fragmentSize: 4096),
+      expect(() => other.subscribe<RosImage>('/camera', fragmentSize: 4096),
           throwsArgumentError);
     });
 

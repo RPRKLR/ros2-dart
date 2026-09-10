@@ -11,9 +11,9 @@ import 'package:test/test.dart';
 Uint8List frame(Object? value) =>
     Uint8List.fromList(cborEncode(CborValue(value)));
 
-Map<String, Object?> decodeMsg(Object? msg) =>
-    WireCodec.decode(frame({'op': 'publish', 'topic': '/t', 'msg': msg}))['msg']!
-        as Map<String, Object?>;
+Map<String, Object?> decodeMsg(Object? msg) => WireCodec.decode(
+        frame({'op': 'publish', 'topic': '/t', 'msg': msg}))['msg']!
+    as Map<String, Object?>;
 
 void main() {
   group('uint8[] as a byte string', () {
@@ -77,8 +77,9 @@ void main() {
 
     test('a tagged uint8 array also decodes to a Uint8List', () {
       final bytes = Uint8List.fromList([1, 2, 3]);
-      final msg =
-          decodeMsg({'d': CborBytes(bytes, tags: [CborTag.uint8Array])});
+      final msg = decodeMsg({
+        'd': CborBytes(bytes, tags: [CborTag.uint8Array])
+      });
       expect(msg['d'], isA<Uint8List>());
       expect(msg['d'], bytes);
     });

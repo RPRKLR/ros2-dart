@@ -23,8 +23,7 @@ library;
 
 export 'package:ros2_client/ros2_client.dart';
 
-export 'src/ros_connection.dart'
-    show RosConnection, RosConnectionBuilder;
+export 'src/ros_connection.dart' show RosConnection, RosConnectionBuilder;
 export 'src/ros_stream_builder.dart' show RosTopicBuilder;
 export 'src/widgets/camera_view.dart' show RosCameraView, RosRawImageView;
 export 'src/widgets/laser_scan_view.dart' show RosLaserScanView;

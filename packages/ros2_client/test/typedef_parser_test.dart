@@ -98,8 +98,8 @@ void main() {
       final marker = parse(markerTypedef);
       final scan = parse(laserScanTypedef);
 
-      expect(scan.fields.firstWhere((f) => f.name == 'angle_min').type,
-          'float32');
+      expect(
+          scan.fields.firstWhere((f) => f.name == 'angle_min').type, 'float32');
       expect(marker.fields.firstWhere((f) => f.name == 'frame_locked').type,
           'bool');
     });
@@ -124,8 +124,7 @@ void main() {
       expect(scan.fields.firstWhere((f) => f.name == 'ranges').arrayKind,
           ArrayKind.unbounded);
 
-      final covariance =
-          pose.fields.firstWhere((f) => f.name == 'covariance');
+      final covariance = pose.fields.firstWhere((f) => f.name == 'covariance');
       expect(covariance.arrayKind, ArrayKind.fixed);
       expect(covariance.arraySize, 36);
       expect(covariance.type, 'float64');

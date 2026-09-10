@@ -146,8 +146,7 @@ class _RosRawImageViewState extends State<RosRawImageView> {
     );
   }
 
-  static Future<ui.Image> _decodeRgba(
-      Uint8List rgba, int width, int height) {
+  static Future<ui.Image> _decodeRgba(Uint8List rgba, int width, int height) {
     final completer = Completer<ui.Image>();
     ui.decodeImageFromPixels(
       rgba,

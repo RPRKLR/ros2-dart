@@ -51,9 +51,9 @@ void main() {
   stdout.writeln('');
 }
 
-void _row(String a, String b, String c, String d, String e) => stdout.writeln(
-    '${a.padRight(26)}${b.padLeft(8)}${c.padLeft(10)}${d.padLeft(9)}'
-    '${e.padLeft(9)}');
+void _row(String a, String b, String c, String d, String e) => stdout
+    .writeln('${a.padRight(26)}${b.padLeft(8)}${c.padLeft(10)}${d.padLeft(9)}'
+        '${e.padLeft(9)}');
 
 ({double perSecond, double microsPerOp}) _measure(Case c) {
   // Warm up so the JIT has optimised the hot path before timing.

@@ -249,8 +249,8 @@ Future<void> main(List<String> args) async {
 /// With no packages named, this generates exactly the interfaces the robot is
 /// actually using — the types on its live topics, services and action servers
 /// — which is usually what you want and is far smaller than whole packages.
-Future<int> _generateFromRobot(Uri uri, List<String> packages, String outDir,
-    bool useBundled) async {
+Future<int> _generateFromRobot(
+    Uri uri, List<String> packages, String outDir, bool useBundled) async {
   final client = Ros2Client(uri, reconnectPolicy: ReconnectPolicy.none);
   stdout.writeln('Connecting to $uri ...');
   try {
