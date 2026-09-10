@@ -81,25 +81,55 @@ Bugs the 136-message run caught that a small sample would not have:
 Still to do here: `.srv` and `.action` emission (the parser already handles
 both), and pre-generated `ros2_msgs_common` so most users never run the tool.
 
-## v0.2.1 — Remaining generator work
+## v0.2.1 — Online generation ✅ *shipped*
 
-Hand-writing message classes does not scale past the standard set, and every
-robot has custom interfaces. This is what turns the package from a demo into
-something teams adopt.
+`--from-robot ws://host:9090` generates from the robot's own `rosapi` node, so
+neither a ROS install nor a source tree is needed on the development machine.
+With no packages named it generates exactly the interfaces the robot is
+actually using; naming packages generates those in full. Messages, services and
+actions all come through, with nested types resolved recursively across package
+boundaries.
 
-- `dart run ros2_gen` — parse `.msg` / `.srv` / `.action` into Dart classes
-- Two input modes:
-  - **offline**: point at a `src/` tree or a sourced ROS install
-  - **online**: pull definitions from a live robot via
-    `rosapi/message_details`, which already returns full typedefs
-- Emit `build.yaml`-compatible output so it fits normal Flutter workflows
-- Generate constants, bounded/fixed arrays, and nested defaults correctly
-- Ship pre-generated `ros2_msgs_common` (action_msgs, tf2_msgs, nav2_msgs,
-  control_msgs) so most users never run the generator
+Verified against rosbridge 2.0.7 and turtlesim on Humble: the generated
+`turtlesim.Pose` decoded a live `/turtle1/pose`, and the generated
+`SpawnRequest`/`SpawnResponse` drove `/spawn`, both from classes the robot had
+described minutes earlier over a WebSocket.
 
-**Risk to watch:** ROS 2 `.msg` has subtleties (bounded strings, default
-values, `constant` vs `field`) that naive parsers get wrong. Test against the
-full `common_interfaces` repo, not a handful of examples.
+The network half lives in the CLI; the conversion half is `TypedefParser` and
+`TypedefHarvest`, which are pure and unit tested against captured real rosapi
+output.
+
+### What `rosapi/message_details` actually returns
+
+The service is documented as returning typedefs and nothing more, so all of
+this was read out of `rosapi/objectutils.py` and confirmed by calling it:
+
+**It cannot describe bounded arrays or bounded strings at all.** Its regex
+turns `sequence<double, 3>` into the type name `"double, 3"`, and then either
+raises an `AssertionError` internally (`shape_msgs/SolidPrimitive`) or hands
+back the mangled name as if it were a type
+(`rcl_interfaces/ParameterDescriptor`). The generator refuses to name a class
+after a bound, and reports every type that was referenced but not generated —
+because the first attempt produced output that only failed at `dart analyze`,
+which is the same silent-failure class as the QoS bug in v0.1.
+
+**Primitives come back in IDL spelling**, `double`/`float`/`boolean`/`octet`
+rather than `float64`/`float32`/`bool`/`byte`. Emitted literally, every
+`float64` field references a nested class named `double`.
+
+**The constant list is not a constant list.** It is built from
+`inspect.getmembers`, so it contains every field name paired with its default
+value, plus `SLOT_TYPES`, whose value is a Python repr with a memory address in
+it. `visualization_msgs/Marker` returns real constants and field names
+interleaved in one flat list, which is why filtering has to be per-message.
+
+### Still owed here
+
+- Pre-generated `ros2_msgs_common` (action_msgs, tf2_msgs, nav2_msgs,
+  control_msgs) so most users never run the generator at all
+- `build.yaml`-compatible output, to fit normal Flutter build workflows
+- An online run against a robot with genuinely custom interfaces; everything
+  above was verified against stock Humble packages
 
 ## v0.3 — Transforms ✅ *shipped*
 

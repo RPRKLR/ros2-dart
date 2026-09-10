@@ -209,6 +209,45 @@ reuses type names across packages (`geometry_msgs/Pose` and
 Verified on 136 messages across 12 real ROS packages, plus nav2_msgs'
 11 services and 15 actions.
 
+### Generating from a live robot
+
+With `--from-robot` the definitions come from the robot's own `rosapi` node
+over rosbridge, so no ROS install and no source tree are needed on the machine
+you develop on:
+
+```bash
+# Exactly the types this robot is using, on its live topics and services.
+dart run ros2_client:generate -o lib/msgs -r ws://robot.local:9090
+
+# Or whole packages, including ones you have no source for.
+dart run ros2_client:generate -o lib/msgs -r ws://robot.local:9090 my_robot_msgs
+```
+
+This is the mode for custom interfaces you did not write and cannot easily
+check out. Messages, services and actions all come through, and nested types
+are resolved recursively across package boundaries.
+
+**`rosapi` cannot describe a type with a bounded array (`T[<=N]`) or a bounded
+string (`string<=N`).** Its own parser mangles `sequence<T, N>` into the type
+name `"T, N"` and then either raises internally or reports that as the type —
+`shape_msgs/SolidPrimitive` and `rcl_interfaces/ParameterDescriptor` both hit
+this. The generator refuses to emit a class named after a bound, names the
+offending field, and lists any type that was referenced but not generated, so
+a broken build is reported rather than shipped. Generate those packages from
+source with `--search`.
+
+Two other things the online path has to correct for, both verified against
+rosapi 2.0.7 on Humble:
+
+  * `rosapi` reports the IDL spelling of primitives — `double`, `float`,
+    `boolean`, `octet` — where `.msg` files say `float64`, `float32`, `bool`,
+    `byte`. Taken literally, every `float64` field would generate a reference
+    to a nested class named `double`.
+  * its constant list is not a constant list. It walks `inspect.getmembers`,
+    so it returns every field name with its default value, plus `SLOT_TYPES`,
+    whose value is a Python repr containing a memory address. Only names that
+    are not fields survive.
+
 ## Hand-written messages
 
 You can also register a codec by hand, which is all the generator does:

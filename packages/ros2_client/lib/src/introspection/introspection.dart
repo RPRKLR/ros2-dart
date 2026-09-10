@@ -133,15 +133,68 @@ extension Ros2Introspection on Ros2Client {
     return _strings(res['action_servers']);
   }
 
-  /// The raw `.msg` text for [type] and everything it depends on.
+  /// Every interface type the robot knows about, e.g. `sensor_msgs/msg/Image`.
+  Future<List<String>> listInterfaces(
+      {Duration timeout = graphQueryTimeout}) async {
+    final res = await callServiceJson('/rosapi/interfaces', const {},
+        timeout: timeout);
+    return _strings(res['interfaces']);
+  }
+
+  /// Structured definitions of [type] and every type it contains.
   ///
-  /// This is what makes runtime code generation possible: point the generator
-  /// at a live robot and it can emit Dart classes for types it has never seen.
-  Future<List<String>> messageDefinition(String type) async {
+  /// This is what makes generating from a live robot possible: no ROS install
+  /// and no source tree, just a WebSocket. `rosapi` resolves nested types
+  /// recursively, so one call returns the whole dependency closure.
+  ///
+  /// The result is raw `rosapi_msgs/msg/TypeDef` maps; `TypedefParser` in the
+  /// codegen library turns them into the same definitions the `.msg` parser
+  /// produces.
+  ///
+  /// **`rosapi` cannot describe a type with a bounded array or bounded
+  /// string.** `sequence<T, N>` and `string<N>` both make it raise an
+  /// `AssertionError` internally, which arrives here as a failed service call.
+  /// Generate those packages from source instead. Verified against rosapi
+  /// 2.0.7 on Humble with `shape_msgs/SolidPrimitive`.
+  Future<List<Map<String, Object?>>> messageTypedefs(String type,
+          {Duration timeout = graphQueryTimeout}) =>
+      _typedefs('/rosapi/message_details', type, timeout);
+
+  /// Structured definitions of a service's request message.
+  Future<List<Map<String, Object?>>> serviceRequestTypedefs(String type,
+          {Duration timeout = graphQueryTimeout}) =>
+      _typedefs('/rosapi/service_request_details', type, timeout);
+
+  /// Structured definitions of a service's response message.
+  Future<List<Map<String, Object?>>> serviceResponseTypedefs(String type,
+          {Duration timeout = graphQueryTimeout}) =>
+      _typedefs('/rosapi/service_response_details', type, timeout);
+
+  /// Structured definitions of an action's goal message.
+  Future<List<Map<String, Object?>>> actionGoalTypedefs(String type,
+          {Duration timeout = graphQueryTimeout}) =>
+      _typedefs('/rosapi/action_goal_details', type, timeout);
+
+  /// Structured definitions of an action's result message.
+  Future<List<Map<String, Object?>>> actionResultTypedefs(String type,
+          {Duration timeout = graphQueryTimeout}) =>
+      _typedefs('/rosapi/action_result_details', type, timeout);
+
+  /// Structured definitions of an action's feedback message.
+  Future<List<Map<String, Object?>>> actionFeedbackTypedefs(String type,
+          {Duration timeout = graphQueryTimeout}) =>
+      _typedefs('/rosapi/action_feedback_details', type, timeout);
+
+  Future<List<Map<String, Object?>>> _typedefs(
+      String service, String type, Duration timeout) async {
     final res =
-        await callServiceJson('/rosapi/message_details', {'type': type});
+        await callServiceJson(service, {'type': type}, timeout: timeout);
     final defs = res['typedefs'];
-    return defs is List ? defs.map((d) => jsonEncode(d)).toList() : const [];
+    if (defs is! List) return const [];
+    return [
+      for (final def in defs)
+        if (def is Map) def.cast<String, Object?>(),
+    ];
   }
 
   /// ROS distro reported by the robot, e.g. `humble`.
