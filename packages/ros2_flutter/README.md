@@ -47,6 +47,19 @@ Both teleop widgets publish a zero `Twist` on release **and** on dispose, and
 repeat the current command at a fixed rate while held so a watchdog-equipped
 robot does not stall mid-motion.
 
+They also advertise `perishable: true`, which is a safety property rather than
+an optimisation. The client buffers publishes during a reconnect so a command
+issued across a brief outage is not lost — right for a goal pose, dangerous for
+a velocity. A stalled link would otherwise fill that buffer with motion
+commands, and the moment it recovered the robot would be handed seconds of
+stale motion in one burst, *after* the operator had already let go — with the
+zero Twist from the release dropped, because the buffer was full. A perishable
+publisher drops instead of queueing. Use it for anything that commands motion.
+
+Changing `topic` rebinds the publisher and sends a stop to the topic being left
+behind, so a robot selector cannot leave the previous robot driving while the
+UI names the new one.
+
 ## Transforms
 
 `TfFrameBuilder` maps points *from* `sourceFrame` *into* `targetFrame` — the

@@ -15,11 +15,21 @@ final class _FakeTransport implements RosTransport {
   Stream<Object> get incoming => _incoming.stream;
 
   @override
-  Future<void> connect() async {}
+  Future<void> connect() async {
+    // A stalled link refuses reconnects too; without this the client
+    // reconnects instantly and the outage never actually happens.
+    if (!up) throw StateError('socket is gone');
+  }
+
+  /// Set false to simulate a stalled link: a real transport throws when the
+  /// socket is gone, which is what makes the client buffer or drop.
+  bool up = true;
 
   @override
-  void send(String data) =>
-      sent.add(jsonDecode(data) as Map<String, Object?>);
+  void send(String data) {
+    if (!up) throw StateError('socket is gone');
+    sent.add(jsonDecode(data) as Map<String, Object?>);
+  }
 
   @override
   Future<void> close() async {
@@ -31,15 +41,23 @@ final class _FakeTransport implements RosTransport {
 
   /// Pushes a frame verbatim, for wire forms `jsonEncode` cannot produce.
   void emitRaw(String frame) => _incoming.add(frame);
+
+  /// Simulates the socket dying, which is what drives the client's reconnect
+  /// loop and therefore its outbox replay.
+  void drop() {
+    up = false;
+    _incoming.addError(StateError('connection lost'));
+  }
 }
 
 /// A client wired to [_FakeTransport], connected and ready.
-({Ros2Client client, _FakeTransport transport}) fakeClient() {
+({Ros2Client client, _FakeTransport transport}) fakeClient(
+    {ReconnectPolicy policy = ReconnectPolicy.none}) {
   final transport = _FakeTransport();
   final client = Ros2Client(
     Uri.parse('ws://fake:9090'),
     transportFactory: (_) => transport,
-    reconnectPolicy: ReconnectPolicy.none,
+    reconnectPolicy: policy,
   );
   return (client: client, transport: transport);
 }
@@ -381,5 +399,171 @@ void main() {
     final tfSubs = fake.transport.sent
         .where((m) => m['op'] == 'subscribe' && m['topic'] == '/tf');
     expect(tfSubs, hasLength(1), reason: '/tf must be subscribed exactly once');
+  });
+
+  testWidgets('teleop never replays stale motion after the link recovers',
+      (tester) async {
+    // The runaway case: the operator holds the stick, the link stalls, they
+    // let go, and the link comes back. Buffered velocity commands would be
+    // handed to the robot in one burst after the operator already released.
+    // A policy that retries quickly, so the reconnect (and therefore the
+    // outbox replay) happens inside the test.
+    final fake = fakeClient(
+        policy: const ReconnectPolicy(
+            initialDelay: Duration(milliseconds: 10),
+            maxDelay: Duration(milliseconds: 10),
+            jitter: 0));
+    addTearDown(fake.client.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RosConnection.withClient(
+          client: fake.client,
+          child: const Scaffold(body: TeleopJoystick()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final joystick = find.byType(TeleopJoystick);
+    await tester.drag(joystick, const Offset(0, -40));
+    await tester.pump();
+    expect(fake.transport.sent.where((m) => m['op'] == 'publish'), isNotEmpty,
+        reason: 'sanity: driving publishes while connected');
+
+    // The link dies while the operator is still holding the stick.
+    fake.transport.drop();
+    await tester.pump();
+    final before = fake.transport.sent.length;
+
+    for (var i = 0; i < 40; i++) {
+      await tester.drag(joystick, const Offset(0, -40));
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+
+    // The operator lets go, then the link recovers and the client replays
+    // whatever it buffered.
+    await tester.tapAt(tester.getCenter(joystick));
+    await tester.pump();
+    fake.transport.up = true;
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final replayed = fake.transport.sent
+        .skip(before)
+        .where((m) => m['op'] == 'publish')
+        .map((m) => m['msg']! as Map<String, Object?>)
+        .toList();
+    final moving = replayed.where((msg) {
+      final linear = msg['linear']! as Map<String, Object?>;
+      final angular = msg['angular']! as Map<String, Object?>;
+      return (linear['x']! as num) != 0 || (angular['z']! as num) != 0;
+    });
+
+    expect(moving, isEmpty,
+        reason: 'a motion command buffered while offline must never be '
+            'replayed: the operator has already let go');
+  });
+
+  testWidgets('teleop rebinds when the topic changes', (tester) async {
+    final fake = fakeClient();
+    addTearDown(fake.client.close);
+
+    Widget app(String topic) => MaterialApp(
+          home: RosConnection.withClient(
+            client: fake.client,
+            child: Scaffold(body: TeleopJoystick(topic: topic)),
+          ),
+        );
+
+    await tester.pumpWidget(app('/robot_a/cmd_vel'));
+    await tester.pump();
+    await tester.drag(find.byType(TeleopJoystick), const Offset(0, -40));
+    await tester.pump();
+
+    // A robot selector swaps the topic in place.
+    await tester.pumpWidget(app('/robot_b/cmd_vel'));
+    await tester.pump();
+    final afterSwap = fake.transport.sent.length;
+    await tester.drag(find.byType(TeleopJoystick), const Offset(0, -40));
+    await tester.pump();
+
+    final topics = fake.transport.sent
+        .skip(afterSwap)
+        .where((m) => m['op'] == 'publish')
+        .map((m) => m['topic'])
+        .toSet();
+    // Otherwise the UI names robot B while robot A is the one that moves.
+    expect(topics, {'/robot_b/cmd_vel'});
+
+    // And the robot being left behind gets a stop.
+    final stopToA = fake.transport.sent
+        .where((m) => m['op'] == 'publish' && m['topic'] == '/robot_a/cmd_vel')
+        .last['msg']! as Map<String, Object?>;
+    expect((stopToA['linear']! as Map)['x'], 0.0);
+  });
+
+  testWidgets('RosCameraView keeps frames out of the global ImageCache',
+      (tester) async {
+    final fake = fakeClient();
+    addTearDown(fake.client.close);
+    imageCache.clear();
+    imageCache.clearLiveImages();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RosConnection.withClient(
+          client: fake.client,
+          child: const Scaffold(
+            body: SizedBox(width: 64, height: 64, child: RosCameraView()),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // A 1x1 PNG, republished as distinct byte lists the way a camera would.
+    final png = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+    for (var i = 0; i < 20; i++) {
+      fake.transport.publish('/camera/image_raw/compressed',
+          {'format': 'png', 'data': base64Encode(png)});
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // Image.memory keys the global cache on byte-list identity, so every frame
+    // is a new entry and a video stream evicts everything else the app cached.
+    expect(imageCache.currentSize, 0,
+        reason: 'camera frames are never re-fetched and must not be cached');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('swapping a client closes the old one when asked',
+      (tester) async {
+    final first = fakeClient();
+    final second = fakeClient();
+    addTearDown(second.client.close);
+
+    Widget app(Ros2Client client) => MaterialApp(
+          home: RosConnection.withClient(
+            client: client,
+            closeClientOnDispose: true,
+            child: const SizedBox(),
+          ),
+        );
+
+    await tester.pumpWidget(app(first.client));
+    await tester.pump();
+    expect(first.client.state, isNot(RosConnectionState.closed));
+
+    await tester.pumpWidget(app(second.client));
+    await tester.pump();
+
+    // dispose() honours closeClientOnDispose; didUpdateWidget used not to, so
+    // the old socket, its reconnect timer and every subscription stayed alive
+    // for the life of the app.
+    expect(first.client.state, RosConnectionState.closed);
   });
 }

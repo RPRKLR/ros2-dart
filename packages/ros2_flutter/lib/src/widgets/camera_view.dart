@@ -43,11 +43,15 @@ class RosCameraView extends StatelessWidget {
           return placeholder ??
               const Center(child: CircularProgressIndicator());
         }
-        return Image.memory(
-          image.data,
+        // Every frame is a distinct MemoryImage key, and the global
+        // ImageCache keys on byte-list identity — so a video stream evicts
+        // every other image the app had cached and then thrashes. A camera
+        // frame is never worth re-fetching, so it does not belong in a cache
+        // at all.
+        return _UncachedMemoryImage(
+          bytes: image.data,
           fit: fit,
-          gaplessPlayback: true,
-          errorBuilder: (context, error, stack) => Center(
+          onError: (context) => Center(
             child: Text('Cannot decode ${image.format}'),
           ),
         );
@@ -82,6 +86,10 @@ class _RosRawImageViewState extends State<RosRawImageView> {
   ui.Image? _decoded;
   bool _decoding = false;
 
+  /// The message object last handed to [_ingest], compared by identity so a
+  /// retained snapshot is not decoded twice.
+  RosImage? _lastIngested;
+
   @override
   void dispose() {
     _decoded?.dispose();
@@ -93,6 +101,13 @@ class _RosRawImageViewState extends State<RosRawImageView> {
   /// publishes faster than the device can decode.
   Future<void> _ingest(RosImage frame) async {
     if (_decoding) return;
+    // `_ingest` runs from inside `build`, and its own setState triggers the
+    // next build, in which StreamBuilder hands back the *same* retained
+    // message. Without this the widget re-decodes one frame forever at the
+    // display rate — a full-frame RGBA conversion plus a texture upload per
+    // vsync, even with the robot disconnected.
+    if (identical(frame, _lastIngested)) return;
+    _lastIngested = frame;
     final rgba = _toRgba(frame);
     if (rgba == null) return;
     _decoding = true;
@@ -184,5 +199,93 @@ class _RosRawImageViewState extends State<RosRawImageView> {
         return null;
     }
     return out;
+  }
+}
+
+/// Decodes and shows encoded image bytes without touching the global
+/// [ImageCache].
+///
+/// `Image.memory` resolves through `PaintingBinding.imageCache`, whose keys
+/// compare byte lists by identity — so every camera frame is a new entry,
+/// retained until the 1000-entry / 100 MB LRU forces eviction. At 10 fps of
+/// 640x480 that budget is gone in seconds, taking every other cached image in
+/// the app with it, and the cache then thrashes continuously. A video frame is
+/// never re-fetched, so caching it buys nothing.
+class _UncachedMemoryImage extends StatefulWidget {
+  const _UncachedMemoryImage({
+    required this.bytes,
+    required this.fit,
+    required this.onError,
+  });
+
+  final Uint8List bytes;
+  final BoxFit fit;
+  final Widget Function(BuildContext context) onError;
+
+  @override
+  State<_UncachedMemoryImage> createState() => _UncachedMemoryImageState();
+}
+
+class _UncachedMemoryImageState extends State<_UncachedMemoryImage> {
+  ui.Image? _image;
+  bool _failed = false;
+  Uint8List? _decodingBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _decode();
+  }
+
+  @override
+  void didUpdateWidget(_UncachedMemoryImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.bytes, widget.bytes)) _decode();
+  }
+
+  Future<void> _decode() async {
+    final bytes = widget.bytes;
+    // One decode in flight at a time; a frame arriving mid-decode is dropped
+    // rather than queued, which keeps latency bounded when the robot
+    // publishes faster than the device can decode.
+    if (_decodingBytes != null) return;
+    _decodingBytes = bytes;
+    try {
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      codec.dispose();
+      if (!mounted) {
+        frame.image.dispose();
+        return;
+      }
+      setState(() {
+        _image?.dispose();
+        _image = frame.image;
+        _failed = false;
+      });
+    } on Object {
+      if (mounted) setState(() => _failed = true);
+    } finally {
+      _decodingBytes = null;
+      // A frame that arrived while this one was decoding left the widget
+      // showing a stale image; pick up the newest bytes.
+      if (mounted && !identical(widget.bytes, bytes)) unawaited(_decode());
+    }
+  }
+
+  @override
+  void dispose() {
+    _image?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_failed) return widget.onError(context);
+    final image = _image;
+    if (image == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return RawImage(image: image, fit: widget.fit);
   }
 }

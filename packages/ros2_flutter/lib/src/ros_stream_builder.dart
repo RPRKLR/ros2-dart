@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:ros2_client/ros2_client.dart';
 
@@ -44,6 +46,12 @@ class RosTopicBuilder<T> extends StatefulWidget {
   final int? throttleRate;
 
   final T? initialValue;
+
+  /// Reports a decode failure.
+  ///
+  /// Rarely fires: the client catches decode errors and routes them to
+  /// `Ros2Client.status` rather than to the topic stream, so a malformed
+  /// message usually shows up there instead. Listen to `status` too.
   final void Function(Object error)? onError;
 
   @override
@@ -52,6 +60,7 @@ class RosTopicBuilder<T> extends StatefulWidget {
 
 class _RosTopicBuilderState<T> extends State<RosTopicBuilder<T>> {
   Stream<T>? _stream;
+  Object? _reportedError;
 
   @override
   void didChangeDependencies() {
@@ -64,6 +73,7 @@ class _RosTopicBuilderState<T> extends State<RosTopicBuilder<T>> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.topic != widget.topic ||
         oldWidget.qos != widget.qos ||
+        oldWidget.compression != widget.compression ||
         oldWidget.throttleRate != widget.throttleRate) {
       _resubscribe();
     }
@@ -87,7 +97,20 @@ class _RosTopicBuilderState<T> extends State<RosTopicBuilder<T>> {
       stream: _stream,
       initialData: widget.initialValue,
       builder: (context, snapshot) {
-        if (snapshot.hasError) widget.onError?.call(snapshot.error!);
+        final error = snapshot.error;
+        // Deferred and deduplicated: this runs inside build, and StreamBuilder
+        // retains an error snapshot, so calling straight through would invoke
+        // the callback on every unrelated rebuild — and a setState inside it
+        // would throw "setState called during build".
+        if (error != null && !identical(error, _reportedError)) {
+          _reportedError = error;
+          final onError = widget.onError;
+          if (onError != null) {
+            scheduleMicrotask(() {
+              if (mounted) onError(error);
+            });
+          }
+        }
         return widget.builder(context, snapshot.data);
       },
     );

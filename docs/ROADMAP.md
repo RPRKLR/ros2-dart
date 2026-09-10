@@ -296,6 +296,43 @@ it work, which is why it would have looked intermittent.
   messages. The parameter is renamed when a field would capture it.
 - A constant named `FROM_JSON` collided with the generated factory.
 
+### The widget audit found a runaway robot
+
+The worst bug of the four audits, and the reason the teleop widgets now
+advertise `perishable: true`.
+
+`Timer.periodic` repeated the held command unconditionally, and every repeat
+during an outage went into the client's outbox — 256 deep, **dropping the
+newest when full**. Hold the stick forward, let the link stall for ~26 s at
+10 Hz, release: the zero Twist from the release is dropped because the buffer
+is full, the link recovers, and `_flushOutbox` replays 256 non-zero velocity
+commands onto the new socket, the last of them `linear.x = 0.3`. The robot
+drives away after the operator has let go, and the dispose-time stop fails the
+same way in exactly the situation where it matters most.
+
+`advertise(perishable: true)` drops instead of queueing. The regression test
+reproduces the full sequence — drop, hold, release, reconnect — and fails
+without the flag.
+
+Two more from the same audit, both reproduced:
+
+**Teleop never rebound.** `_publisher ??=` meant a robot selector that swapped
+`topic` kept driving the old robot while the UI named the new one, and a
+`RosConnection` that swapped clients left the stick publishing into a closed
+client, which drops silently. Now rebinds, and stops the robot it is leaving.
+
+**`RosCameraView` filled the global `ImageCache` with video frames.**
+`Image.memory` keys on byte-list identity, so every frame was a new entry; at
+10 fps of 640x480 the 100 MB budget is gone in ~8 s, evicting every other image
+the app had cached and then thrashing. Camera frames are never re-fetched, so
+they are now decoded outside the cache entirely.
+
+Also fixed: `RosRawImageView` re-decoded the same retained frame every vsync
+(its `setState` triggered the build that fed it the same message back);
+`RosConnection` ignored `closeClientOnDispose` when swapping clients, leaking
+the old socket and its timers; `RosTopicBuilder` ignored `compression` changes
+and called `onError` during build.
+
 ### Still open from the audits
 
 - `latch: true` is ignored, because the client always sends `qos` and

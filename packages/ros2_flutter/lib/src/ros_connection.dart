@@ -143,7 +143,12 @@ class _RosConnectionState extends State<RosConnection>
       _disposeTf();
       _client = _build();
       _connect();
-      if (oldWidget.client == null) old.close();
+      // dispose() honours closeClientOnDispose; so must this, or swapping the
+      // client leaves the old socket, its reconnect timer and every one of its
+      // subscriptions alive for the life of the app.
+      if (oldWidget.client == null || oldWidget.closeClientOnDispose) {
+        old.close();
+      }
     }
   }
 

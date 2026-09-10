@@ -436,6 +436,19 @@ void main() {
       expect(handle.isDone, isTrue);
     });
 
+    test('close completes even with an active states listener', () async {
+      // An async* states getter holds the controller subscription in a way
+      // that can block close() on _stateController.close(). A plain
+      // controller does not, and this pins that.
+      await connect();
+      ros.states.listen((_) {});
+      ros.status.listen((_) {});
+      await pump();
+
+      await ros.close().timeout(const Duration(seconds: 3),
+          onTimeout: () => fail('close() deadlocked'));
+    });
+
     test('reports why the connection died', () async {
       await connect();
       final statuses = <RosStatus>[];

@@ -63,29 +63,40 @@ final class GoalHandle<Feedback, Result> {
 
 /// A typed publisher bound to one topic.
 final class RosPublisher<T> {
-  RosPublisher._(this._client, this.topic, this._codec, this._qos, this._latch);
+  RosPublisher._(this._client, this.topic, this._codec, this._qos, this._latch,
+      this._perishable);
 
   final Ros2Client _client;
   final String topic;
   final MessageCodec<T> _codec;
   final QosProfile _qos;
   final bool _latch;
+
+  /// Whether a message sent while offline is dropped rather than queued.
+  final bool _perishable;
   bool _closed = false;
 
   String get rosType => _codec.rosType;
 
-  /// Publishes [message]. Silently buffered by the client while reconnecting.
+  /// Publishes [message].
+  ///
+  /// Buffered while reconnecting and replayed on the next connect, unless the
+  /// publisher was advertised with `perishable: true`, in which case a message
+  /// sent while offline is dropped.
   void publish(T message) {
     if (_closed) {
       throw StateError('Publisher for $topic is closed.');
     }
-    _client._send({
-      'op': Op.publish,
-      'topic': topic,
-      'msg': _codec.toJson(message),
-      if (_latch) 'latch': true,
-      'qos': _qos.toWire(),
-    });
+    _client._send(
+      {
+        'op': Op.publish,
+        'topic': topic,
+        'msg': _codec.toJson(message),
+        if (_latch) 'latch': true,
+        'qos': _qos.toWire(),
+      },
+      perishable: _perishable,
+    );
   }
 
   /// Unadvertises the topic.
@@ -444,10 +455,19 @@ final class Ros2Client {
   ///
   /// Call [RosPublisher.close] when done. Advertising the same topic twice
   /// returns independent publishers sharing one bridge advertisement.
+  /// Set [perishable] for command topics such as `/cmd_vel`.
+  ///
+  /// The outbox exists so a publish during a brief reconnect is not lost, and
+  /// for state that is still true a minute later — a goal pose, a mode change
+  /// — that is right. For a motion command it is dangerous: a stalled link
+  /// fills the buffer with velocity commands, and the moment it recovers the
+  /// robot is handed seconds of stale motion in one burst, after the operator
+  /// has already let go. A perishable publisher drops instead of queueing.
   RosPublisher<T> advertise<T>(
     String topic, {
     QosProfile qos = QosProfile.default_,
     bool latch = false,
+    bool perishable = false,
     MessageCodec<T>? codec,
   }) {
     final resolved = codec ?? MessageRegistry.of<T>();
@@ -466,7 +486,7 @@ final class Ros2Client {
     } else {
       existing.refCount++;
     }
-    return RosPublisher<T>._(this, topic, resolved, qos, latch);
+    return RosPublisher<T>._(this, topic, resolved, qos, latch, perishable);
   }
 
   /// One-shot publish to a topic without holding a publisher.
@@ -631,17 +651,17 @@ final class Ros2Client {
     Op.unsubscribe,
   };
 
-  void _send(Map<String, Object?> command) {
+  void _send(Map<String, Object?> command, {bool perishable = false}) {
     if (_state == RosConnectionState.closed) return;
     final transport = _transport;
     if (transport == null || !isConnected) {
-      _enqueue(command);
+      if (!perishable) _enqueue(command);
       return;
     }
     try {
       transport.send(WireCodec.encode(command));
     } catch (_) {
-      _enqueue(command);
+      if (!perishable) _enqueue(command);
     }
   }
 

@@ -49,14 +49,53 @@ class _TeleopJoystickState extends State<TeleopJoystick> {
   Offset _knob = Offset.zero;
   Timer? _timer;
   RosPublisher<Twist>? _publisher;
+  Ros2Client? _client;
+  String? _boundTopic;
 
   double get _radius => widget.size / 2;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _publisher ??= RosConnection.of(context).advertise<Twist>(widget.topic);
+    _bind();
   }
+
+  @override
+  void didUpdateWidget(TeleopJoystick oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.topic != widget.topic) _bind();
+  }
+
+  /// Rebinds when the topic or the connection changes.
+  ///
+  /// Without this a robot-selector that swaps `topic` keeps driving the old
+  /// robot while the UI names the new one, and a `RosConnection` that swaps
+  /// clients leaves the stick publishing into a closed client, which drops
+  /// commands silently.
+  void _bind() {
+    final client = RosConnection.of(context);
+    if (identical(client, _client) && widget.topic == _boundTopic) return;
+
+    // Stop the robot we are about to stop talking to.
+    if (_publisher != null) {
+      _publishTo(_publisher, Twist.stop);
+      _publisher!.close();
+    }
+    _client = client;
+    _boundTopic = widget.topic;
+    // Perishable: a motion command that could not be sent must never be
+    // replayed later. See Ros2Client.advertise.
+    _publisher = client.advertise<Twist>(widget.topic, perishable: true);
+  }
+
+  static void _publishTo(RosPublisher<Twist>? publisher, Twist twist) {
+    try {
+      publisher?.publish(twist);
+    } on StateError {
+      // Already closed during teardown.
+    }
+  }
+
 
   @override
   void dispose() {
@@ -68,13 +107,7 @@ class _TeleopJoystickState extends State<TeleopJoystick> {
     super.dispose();
   }
 
-  void _publish(Twist twist) {
-    try {
-      _publisher?.publish(twist);
-    } on StateError {
-      // Publisher closed during teardown.
-    }
-  }
+  void _publish(Twist twist) => _publishTo(_publisher, twist);
 
   Twist get _command {
     final normalized = _knob / _radius;
@@ -193,38 +226,73 @@ class TeleopPad extends StatefulWidget {
 class _TeleopPadState extends State<TeleopPad> {
   Timer? _timer;
   RosPublisher<Twist>? _publisher;
+  Ros2Client? _client;
+  String? _boundTopic;
   Twist _current = Twist.stop;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _publisher ??= RosConnection.of(context).advertise<Twist>(widget.topic);
+    _bind();
+  }
+
+  @override
+  void didUpdateWidget(TeleopPad oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.topic != widget.topic) _bind();
+  }
+
+  /// Rebinds when the topic or the connection changes.
+  ///
+  /// Without this a robot-selector that swaps `topic` keeps driving the old
+  /// robot while the UI names the new one, and a `RosConnection` that swaps
+  /// clients leaves the stick publishing into a closed client, which drops
+  /// commands silently.
+  void _bind() {
+    final client = RosConnection.of(context);
+    if (identical(client, _client) && widget.topic == _boundTopic) return;
+
+    // Stop the robot we are about to stop talking to.
+    if (_publisher != null) {
+      _publishTo(_publisher, Twist.stop);
+      _publisher!.close();
+    }
+    _client = client;
+    _boundTopic = widget.topic;
+    // Perishable: a motion command that could not be sent must never be
+    // replayed later. See Ros2Client.advertise.
+    _publisher = client.advertise<Twist>(widget.topic, perishable: true);
+  }
+
+  static void _publishTo(RosPublisher<Twist>? publisher, Twist twist) {
+    try {
+      publisher?.publish(twist);
+    } on StateError {
+      // Already closed during teardown.
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    try {
-      _publisher?.publish(Twist.stop);
-    } on StateError {
-      // Already torn down.
-    }
+    _publishTo(_publisher, Twist.stop);
     _publisher?.close();
     super.dispose();
   }
 
   void _hold(Twist twist) {
     _current = twist;
-    _publisher?.publish(twist);
+    _publishTo(_publisher, twist);
     _timer?.cancel();
-    _timer = Timer.periodic(widget.publishRate, (_) => _publisher?.publish(_current));
+    _timer =
+        Timer.periodic(widget.publishRate, (_) => _publishTo(_publisher, _current));
   }
 
   void _release() {
     _timer?.cancel();
     _timer = null;
     _current = Twist.stop;
-    _publisher?.publish(Twist.stop);
+    _publishTo(_publisher, Twist.stop);
   }
 
   Widget _button(IconData icon, Twist twist) => Listener(
