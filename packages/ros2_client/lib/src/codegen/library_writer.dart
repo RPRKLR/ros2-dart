@@ -1,0 +1,385 @@
+import 'bundled_types.dart';
+import 'dart_emitter.dart';
+import 'interface_def.dart';
+
+/// Renders parsed interfaces into a Dart library.
+final class LibraryWriter {
+  LibraryWriter({
+    required this.package,
+    required this.messages,
+    this.services = const [],
+    this.actions = const [],
+    this.useBundled = true,
+  }) : _resolver = TypeResolver(package: package, useBundled: useBundled);
+
+  /// Whether to defer to the message types `ros2_client` already provides,
+  /// rather than emitting a second copy of each. See [BundledTypes].
+  final bool useBundled;
+
+  final TypeResolver _resolver;
+
+  /// The ROS package these messages belong to, e.g. `sensor_msgs`.
+  final String package;
+  final List<MessageDef> messages;
+  final List<ServiceDef> services;
+  final List<ActionDef> actions;
+
+  /// Every message body in this library, including the request/response and
+  /// goal/result/feedback parts synthesised from services and actions.
+  List<MessageDef> get _allMessages => [
+        // A bundled type is not re-emitted: two classes registering a codec
+        // for one ROS type name would leave `MessageRegistry.byRosType`
+        // resolving to whichever was registered last.
+        for (final m in messages)
+          if (!_resolver.isProvided(m.rosType)) m,
+        for (final s in services) ...[s.request, s.response],
+        for (final a in actions) ...[a.goal, a.result, a.feedback],
+      ];
+
+  /// Bundled types these messages reference, so the header knows whether the
+  /// client barrel needs importing at all.
+  bool get _usesBundled => _allMessages.any((m) => m.fields.any((f) =>
+      DartEmitter.scalarDartType(f.type) == null &&
+      _resolver.isProvided(f.type)));
+
+  /// Message bodies actually written, which is fewer than [messages] when
+  /// bundled types are excluded.
+  int get emittedMessageCount => _allMessages.length;
+
+  /// True when nothing is left to emit once bundled types are excluded --
+  /// a package referenced only for types the client already provides.
+  bool get isEmpty =>
+      _allMessages.isEmpty && services.isEmpty && actions.isEmpty;
+
+  /// Emits the complete `.dart` source for [package].
+  String write() {
+    final buffer = StringBuffer();
+    _writeHeader(buffer);
+    for (final message in _allMessages) {
+      _writeMessage(buffer, message);
+    }
+    _writeRegistration(buffer);
+    return buffer.toString();
+  }
+
+  void _writeHeader(StringBuffer out) {
+    final deps = _externalPackages();
+    out
+      ..writeln('// GENERATED CODE - DO NOT EDIT BY HAND.')
+      ..writeln('//')
+      ..writeln('// Regenerate with:')
+      ..writeln('//   dart run ros2_client:generate --package $package')
+      ..writeln()
+      ..writeln();
+    if (_usesTypedData) {
+      out
+        ..writeln("import 'dart:typed_data';")
+        ..writeln();
+    }
+    // The minimal surface, which exports no message classes. The barrel is
+    // imported separately and under a prefix, so a generated type can never be
+    // ambiguous with a bundled one.
+    out.writeln("import 'package:ros2_client/codegen_support.dart';");
+    if (_usesBundled) {
+      // Prefixed: the barrel exports plenty of non-message names, and a custom
+      // ROS package is free to define a message that collides with one.
+      out.writeln("import 'package:ros2_client/ros2_client.dart' "
+          "as ${_resolver.prefix};");
+    }
+    for (final dep in deps) {
+      out.writeln("import '$dep.dart';");
+    }
+    out.writeln();
+  }
+
+  /// True when any field maps to a `dart:typed_data` list.
+  bool get _usesTypedData => _allMessages.any((m) => m.fields
+      .any((f) => f.isArray && DartEmitter.typedListFor(f.type) != null));
+
+  /// True when any field is a list, so `==` needs element-wise comparison.
+  bool get _usesListEquals =>
+      _allMessages.any((m) => m.fields.any((f) => f.isArray));
+
+  /// Packages referenced by these messages, excluding this one and the types
+  /// bundled with the client. Used by the CLI to pull in transitive deps.
+  List<String> get referencedPackages => _externalPackages();
+
+  /// Fully qualified nested types these messages reference, as
+  /// `package/TypeName`. The CLI checks each was actually generated.
+  Set<String> get referencedTypes {
+    final types = <String>{};
+    for (final message in _allMessages) {
+      for (final field in message.fields) {
+        if (DartEmitter.scalarDartType(field.type) != null) continue;
+        if (_resolver.isProvided(field.type)) continue;
+        final parts = field.type.split('/');
+        final pkg = parts.length > 1 ? parts.first : package;
+        types.add('$pkg/${parts.last}');
+      }
+    }
+    return types;
+  }
+
+  /// Other generated libraries this one references.
+  List<String> _externalPackages() {
+    final deps = <String>{};
+    for (final message in _allMessages) {
+      for (final field in message.fields) {
+        if (DartEmitter.scalarDartType(field.type) != null) continue;
+        if (_resolver.isProvided(field.type)) continue;
+        final parts = field.type.split('/');
+        if (parts.length < 2) continue;
+        if (parts.first != package) deps.add(parts.first);
+      }
+    }
+    // Only packages with at least one type the client does not already
+    // provide reach this list. A package whose referenced types are entirely
+    // bundled -- std_msgs when all that is used is Header -- needs no
+    // generated library at all.
+    final sorted = deps.toList()..sort();
+    return sorted;
+  }
+
+  /// Escapes a ROS comment for use as a Dart doc comment.
+  ///
+  /// Doc comments are rendered as markdown, so a bare `<` from a `.msg`
+  /// comment (`value <= 100`) is read as an HTML tag and linted.
+  static String _doc(String comment) => comment
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
+
+  void _writeMessage(StringBuffer out, MessageDef message) {
+    final name = DartEmitter.className(message.name);
+    final fields = message.fields;
+
+    // A field needs a `??` initialiser when it has no const-safe default:
+    // typed-data lists and nested messages.
+    final needsInitialiser = {
+      for (final f in fields) f.name: DartEmitter.constDefaultFor(f) == null,
+    };
+    final anyInitialiser = needsInitialiser.values.any((v) => v);
+
+    if (message.docComment != null) {
+      for (final line in message.docComment!.split('\n')) {
+        out.writeln('/// ${_doc(line.trim())}');
+      }
+      out.writeln('///');
+    }
+    out
+      ..writeln('/// `${message.package}/msg/${message.name}`')
+      ..writeln('final class $name implements RosMessage {');
+
+    // Constructor. An empty named-parameter group (`const Empty({})`) is a
+    // syntax error, so a message with no fields gets a bare constructor.
+    if (fields.isEmpty) {
+      out.writeln('  const $name();');
+    } else {
+      out
+        ..write(anyInitialiser ? '  $name({' : '  const $name({')
+        ..writeln();
+      for (final field in fields) {
+        final dart = DartEmitter.fieldName(field.name);
+        if (needsInitialiser[field.name]!) {
+          out.writeln('    ${DartEmitter.dartTypeOf(field, _resolver)}? $dart,');
+        } else {
+          out.writeln(
+              '    this.$dart = ${DartEmitter.constDefaultFor(field)},');
+        }
+      }
+      out.write('  })');
+      final initialisers = fields
+          .where((f) => needsInitialiser[f.name]!)
+          .map((f) =>
+              '${DartEmitter.fieldName(f.name)} = ${DartEmitter.fieldName(f.name)} ?? ${DartEmitter.fallbackFor(f, _resolver)}')
+          .toList();
+      if (initialisers.isEmpty) {
+        out.writeln(';');
+      } else {
+        out
+          ..writeln(' : ')
+          ..writeln('        ${initialisers.join(',\n        ')};');
+      }
+    }
+    out.writeln();
+
+    // fromJson.
+    out.writeln(
+        '  factory $name.fromJson(Map<String, Object?> json) => $name(');
+    for (final field in fields) {
+      out.writeln(
+          '        ${DartEmitter.fieldName(field.name)}: ${DartEmitter.decodeExpr(field, _resolver)},');
+    }
+    out
+      ..writeln('      );')
+      ..writeln();
+
+    // Constants. Field names are reserved first: a constant that collapses to
+    // the same Dart identifier as a field is renamed, not the other way round.
+    final fieldNames = {
+      for (final f in fields) DartEmitter.fieldName(f.name),
+    };
+    final taken = {...fieldNames};
+    for (final constant in message.constants) {
+      final dartType = DartEmitter.scalarDartType(constant.type) ?? 'Object';
+      final value = DartEmitter.literal(constant.value, dartType);
+      if (constant.comment != null) {
+        out.writeln('  /// ${_doc(constant.comment!)}');
+      }
+      // `taken` grows as constants are emitted: two ROS constants can mangle
+      // to one Dart identifier just as a constant and a field can.
+      final name = DartEmitter.constantName(constant.name, taken: taken);
+      taken.add(name);
+      out.writeln('  static const $dartType $name = $value;');
+    }
+    if (message.constants.isNotEmpty) out.writeln();
+
+    // Fields.
+    for (final field in fields) {
+      if (field.comment != null) out.writeln('  /// ${_doc(field.comment!)}');
+      if (field.arrayKind == ArrayKind.fixed) {
+        out.writeln('  /// Fixed length: ${field.arraySize}.');
+      } else if (field.arrayKind == ArrayKind.bounded) {
+        out.writeln('  /// At most ${field.arraySize} elements.');
+      }
+      out.writeln(
+          '  final ${DartEmitter.dartTypeOf(field, _resolver)} ${DartEmitter.fieldName(field.name)};');
+    }
+    out.writeln();
+
+    // rosType + toJson.
+    out
+      ..writeln('  @override')
+      ..writeln(
+          "  String get rosType => '${message.package}/msg/${message.name}';")
+      ..writeln()
+      ..writeln('  @override')
+      ..writeln('  Map<String, Object?> toJson() => {');
+    for (final field in fields) {
+      out.writeln("        '${field.name}': ${DartEmitter.encodeExpr(field, _resolver)},");
+    }
+    out
+      ..writeln('      };')
+      ..writeln();
+
+    _writeEquality(out, name, fields);
+
+    out
+      ..writeln('}')
+      ..writeln();
+  }
+
+  void _writeEquality(StringBuffer out, String name, List<FieldDef> fields) {
+    // Typed-data and list fields need element-wise comparison; identity would
+    // report two structurally identical messages as different.
+    final needsDeep = fields.any((f) => f.isArray);
+    // A field named `other` would be captured by the parameter:
+    // `other.other == other` compares the argument's field to the argument
+    // itself. That compiles, and makes == false for every pair of equal
+    // messages. Renaming the parameter is invisible to callers.
+    final param = fields.any((f) => DartEmitter.fieldName(f.name) == 'other')
+        ? r'$other'
+        : 'other';
+    out
+      ..writeln('  @override')
+      ..writeln('  bool operator ==(Object $param) =>')
+      ..writeln('      identical(this, $param) ||');
+    if (fields.isEmpty) {
+      out.writeln('      $param is $name;');
+    } else {
+      final comparisons = fields.map((f) {
+        final n = DartEmitter.fieldName(f.name);
+        return f.isArray ? '_listEquals($param.$n, $n)' : '$param.$n == $n';
+      }).join(' &&\n          ');
+      out
+        ..writeln('      ($param is $name &&')
+        ..writeln('          $comparisons);');
+    }
+    out.writeln();
+
+    out
+      ..writeln('  @override')
+      ..writeln('  int get hashCode => Object.hashAll([');
+    for (final field in fields) {
+      final n = DartEmitter.fieldName(field.name);
+      out.writeln(field.isArray ? '        ...$n,' : '        $n,');
+    }
+    out
+      ..writeln('      ]);')
+      ..writeln();
+
+    out
+      ..writeln('  @override')
+      ..writeln("  String toString() => '$name(\${toJson()})';");
+    if (needsDeep) {
+      // Emitted once per library, below.
+    }
+  }
+
+  void _writeRegistration(StringBuffer out) {
+    if (_usesListEquals) {
+      out
+        ..writeln('/// Element-wise list comparison used by generated `==`.')
+        ..writeln('bool _listEquals(List<Object?> a, List<Object?> b) {')
+        ..writeln('  if (identical(a, b)) return true;')
+        ..writeln('  if (a.length != b.length) return false;')
+        ..writeln('  for (var i = 0; i < a.length; i++) {')
+        ..writeln('    if (a[i] != b[i]) return false;')
+        ..writeln('  }')
+        ..writeln('  return true;')
+        ..writeln('}')
+        ..writeln();
+    }
+    out
+      ..writeln('/// Registers every message in `$package`.')
+      ..writeln('///')
+      ..writeln(
+          '/// Call once at startup, before the first subscribe or advertise.')
+      ..writeln('void register${_pascal(package)}() {');
+    for (final message in _allMessages) {
+      final name = DartEmitter.className(message.name);
+      out
+        ..writeln('  MessageRegistry.register(const MessageCodec<$name>(')
+        ..writeln("    rosType: '${message.package}/msg/${message.name}',")
+        ..writeln('    fromJson: $name.fromJson,')
+        ..writeln('    toJson: _toJson,')
+        ..writeln('  ));');
+    }
+    for (final service in services) {
+      final req = DartEmitter.className(service.request.name);
+      final res = DartEmitter.className(service.response.name);
+      out
+        ..writeln('  ServiceRegistry.register(')
+        ..writeln('      const ServiceCodec<$req, $res>(')
+        ..writeln("    serviceType: '${service.rosType}',")
+        ..writeln('    encodeRequest: _toJson,')
+        ..writeln('    decodeResponse: $res.fromJson,')
+        ..writeln('    decodeRequest: $req.fromJson,')
+        ..writeln('    encodeResponse: _toJson,')
+        ..writeln('  ));');
+    }
+    for (final action in actions) {
+      final goal = DartEmitter.className(action.goal.name);
+      final result = DartEmitter.className(action.result.name);
+      final feedback = DartEmitter.className(action.feedback.name);
+      out
+        ..writeln('  ActionRegistry.register(')
+        ..writeln('      const ActionCodec<$goal, $feedback, $result>(')
+        ..writeln("    actionType: '${action.rosType}',")
+        ..writeln('    encodeGoal: _toJson,')
+        ..writeln('    decodeFeedback: $feedback.fromJson,')
+        ..writeln('    decodeResult: $result.fromJson,')
+        ..writeln('  ));');
+    }
+    out
+      ..writeln('}')
+      ..writeln()
+      ..writeln('Map<String, Object?> _toJson(RosMessage m) => m.toJson();');
+  }
+
+  static String _pascal(String snake) => snake
+      .split('_')
+      .where((p) => p.isNotEmpty)
+      .map((p) => p[0].toUpperCase() + p.substring(1))
+      .join();
+}

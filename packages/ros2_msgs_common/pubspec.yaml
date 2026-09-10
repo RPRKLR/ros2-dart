@@ -1,0 +1,25 @@
+name: ros2_msgs_common
+description: Pre-generated Dart classes for the common ROS 2 interface packages - actions, tf2, nav2, control, diagnostics and visualization markers.
+version: 0.1.0
+repository: https://github.com/RPRKLR/ros2-dart
+issue_tracker: https://github.com/RPRKLR/ros2-dart/issues
+
+topics:
+  - ros
+  - ros2
+  - robotics
+  - messages
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  ros2_client: ^0.1.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.0
+
+dependency_overrides:
+  ros2_client:
+    path: ../ros2_client

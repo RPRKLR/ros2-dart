@@ -5,3 +5,8 @@ pubspec.lock
 *.iml
 .idea/
 .vscode/
+
+# Intermediate frames for the documentation GIFs. Regenerate with:
+#   flutter test --update-goldens test/goldens/animation_test.dart
+# The GIFs themselves (packages/ros2_flutter/doc/images) are committed.
+packages/ros2_flutter/test/goldens/frames/

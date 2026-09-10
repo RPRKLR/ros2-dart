@@ -1,0 +1,46 @@
+name: ros2_flutter
+description: Flutter widgets for ROS 2 — connection lifecycle, camera views, laser scan rendering and a teleop joystick, built on ros2_client.
+version: 0.1.0
+repository: https://github.com/RPRKLR/ros2-dart
+issue_tracker: https://github.com/RPRKLR/ros2-dart/issues
+
+topics:
+  - ros
+  - ros2
+  - robotics
+  - teleop
+  - widgets
+
+# Rendered by test/goldens/render_test.dart against a fake transport, so they
+# are the real widgets drawing real messages rather than mock-ups.
+screenshots:
+  - description: 'A LaserScan plotted top-down as the robot moves through a room.'
+    path: doc/images/laser_scan.gif
+  - description: 'The teleop joystick, publishing geometry_msgs/Twist while held.'
+    path: doc/images/teleop.gif
+  - description: 'RosLaserScanView: lidar returns, range rings and heading.'
+    path: doc/images/laser_scan_view.png
+  - description: 'TeleopPad: a discrete D-pad for driving a robot.'
+    path: doc/images/teleop_pad.png
+
+environment:
+  sdk: ^3.6.0
+  flutter: '>=3.24.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Before publishing, replace the path override with a version constraint:
+  #   ros2_client: ^0.1.0
+  ros2_client: ^0.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+# Local development uses the sibling package; pub.dev resolves the version
+# constraint above instead, so this block is ignored on publish.
+dependency_overrides:
+  ros2_client:
+    path: ../ros2_client
