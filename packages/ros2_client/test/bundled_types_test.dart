@@ -130,6 +130,8 @@ void _compileFallbacks() {
   BatteryState();
   Imu();
   NavSatFix();
+  PointCloud2();
+  PointField();
   BoolMsg();
   ColorRGBA();
   EmptyMsg();

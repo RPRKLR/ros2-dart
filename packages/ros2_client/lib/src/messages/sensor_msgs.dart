@@ -5,6 +5,7 @@ import 'package:meta/meta.dart';
 import 'conversions.dart';
 import 'geometry_msgs.dart';
 import 'message.dart';
+import 'point_cloud_reader.dart';
 import 'std_msgs.dart';
 
 /// `sensor_msgs/msg/Image`.
@@ -501,6 +502,168 @@ final class NavSatFix implements RosMessage {
 }
 
 /// Registers every `sensor_msgs` codec.
+/// `sensor_msgs/msg/PointField` — one channel in a [PointCloud2]'s blob.
+@immutable
+final class PointField implements RosMessage {
+  const PointField({
+    this.name = '',
+    this.offset = 0,
+    this.datatype = 0,
+    this.count = 1,
+  });
+
+  factory PointField.fromJson(Map<String, Object?> json) => PointField(
+        name: Field.asString(json['name']),
+        offset: Field.asInt(json['offset']),
+        datatype: Field.asInt(json['datatype']),
+        count: Field.asInt(json['count']),
+      );
+
+  static const int int8 = 1;
+  static const int uint8 = 2;
+  static const int int16 = 3;
+  static const int uint16 = 4;
+  static const int int32 = 5;
+  static const int uint32 = 6;
+  static const int float32 = 7;
+  static const int float64 = 8;
+
+  /// Conventionally `x`, `y`, `z`, `intensity`, `rgb`, `rgba`.
+  final String name;
+
+  /// Byte offset of this field within one point.
+  final int offset;
+
+  /// One of the datatype constants above.
+  final int datatype;
+
+  /// Elements in this field; almost always 1.
+  final int count;
+
+  /// Width of one element in bytes, or 0 if [datatype] is unknown.
+  int get elementSize => switch (datatype) {
+        int8 || uint8 => 1,
+        int16 || uint16 => 2,
+        int32 || uint32 || float32 => 4,
+        float64 => 8,
+        _ => 0,
+      };
+
+  bool get isFloat => datatype == float32 || datatype == float64;
+
+  @override
+  String get rosType => 'sensor_msgs/msg/PointField';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'name': name,
+        'offset': offset,
+        'datatype': datatype,
+        'count': count,
+      };
+
+  @override
+  String toString() => 'PointField($name @$offset type=$datatype)';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PointField &&
+          other.name == name &&
+          other.offset == offset &&
+          other.datatype == datatype &&
+          other.count == count);
+
+  @override
+  int get hashCode => Object.hash(name, offset, datatype, count);
+}
+
+/// `sensor_msgs/msg/PointCloud2`.
+///
+/// The points live in [data] as a packed binary blob whose layout [fields]
+/// describes; nothing here decodes them. Use [reader] to read values out of
+/// that buffer without materialising a Dart object per point — a 100k-point
+/// cloud would otherwise cost 100k allocations per frame, every frame.
+@immutable
+final class PointCloud2 implements RosMessage {
+  PointCloud2({
+    this.header = const Header(),
+    this.height = 1,
+    this.width = 0,
+    this.fields = const [],
+    this.isBigendian = false,
+    this.pointStep = 0,
+    this.rowStep = 0,
+    Uint8List? data,
+    this.isDense = true,
+  }) : data = data ?? _noBytes;
+
+  factory PointCloud2.fromJson(Map<String, Object?> json) => PointCloud2(
+        header: Field.asMessage(json['header'], Header.fromJson),
+        height: Field.asInt(json['height']),
+        width: Field.asInt(json['width']),
+        fields: Field.asList(json['fields'], PointField.fromJson),
+        isBigendian: Field.asBool(json['is_bigendian']),
+        pointStep: Field.asInt(json['point_step']),
+        rowStep: Field.asInt(json['row_step']),
+        data: Field.asBytes(json['data']),
+        isDense: Field.asBool(json['is_dense']),
+      );
+
+  static final Uint8List _noBytes = Uint8List(0);
+
+  final Header header;
+
+  /// 1 for an unordered cloud; the image height for an organised one.
+  final int height;
+  final int width;
+  final List<PointField> fields;
+  final bool isBigendian;
+
+  /// Bytes per point, and therefore the stride through [data].
+  final int pointStep;
+  final int rowStep;
+
+  /// The packed points. Arrives as a view over the CBOR frame, uncopied.
+  final Uint8List data;
+  final bool isDense;
+
+  /// Points described by the header, which may exceed what [data] holds if the
+  /// message was truncated.
+  int get pointCount => height * width;
+
+  /// The named field, or `null` if this cloud does not carry it.
+  PointField? fieldNamed(String name) {
+    for (final field in fields) {
+      if (field.name == name) return field;
+    }
+    return null;
+  }
+
+  /// A reader over [data]. Cheap to construct; holds no copy of the points.
+  PointCloudReader reader() => PointCloudReader(this);
+
+  @override
+  String get rosType => 'sensor_msgs/msg/PointCloud2';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'header': header.toJson(),
+        'height': height,
+        'width': width,
+        'fields': [for (final f in fields) f.toJson()],
+        'is_bigendian': isBigendian,
+        'point_step': pointStep,
+        'row_step': rowStep,
+        'data': Field.encodeBytes(data),
+        'is_dense': isDense,
+      };
+
+  @override
+  String toString() => 'PointCloud2(${width}x$height, '
+      '${fields.map((f) => f.name).join(",")}, ${data.lengthInBytes} bytes)';
+}
+
 void registerSensorMsgs() {
   MessageRegistry.register(const MessageCodec<RosImage>(
       rosType: 'sensor_msgs/msg/Image',
@@ -527,6 +690,14 @@ void registerSensorMsgs() {
   MessageRegistry.register(const MessageCodec<NavSatFix>(
       rosType: 'sensor_msgs/msg/NavSatFix',
       fromJson: NavSatFix.fromJson,
+      toJson: _toJson));
+  MessageRegistry.register(const MessageCodec<PointField>(
+      rosType: 'sensor_msgs/msg/PointField',
+      fromJson: PointField.fromJson,
+      toJson: _toJson));
+  MessageRegistry.register(const MessageCodec<PointCloud2>(
+      rosType: 'sensor_msgs/msg/PointCloud2',
+      fromJson: PointCloud2.fromJson,
       toJson: _toJson));
 }
 

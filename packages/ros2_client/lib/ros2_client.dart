@@ -33,6 +33,8 @@ export 'src/messages/message.dart'
         UnknownMessageTypeError;
 export 'src/messages/nav_msgs.dart';
 export 'src/messages/registry.dart' show registerStandardMessages;
+export 'src/messages/point_cloud_reader.dart'
+    show PointCloudReader, PointCloudFormatException;
 export 'src/messages/sensor_msgs.dart';
 export 'src/messages/service.dart'
     show ServiceCallException, ServiceCodec, ServiceRegistry;

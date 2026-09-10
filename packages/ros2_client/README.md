@@ -86,6 +86,33 @@ ros.subscribe<LaserScan>('/scan',
 
 Typed arrays then decode straight into `Uint8List` / `Float32List`.
 
+### Point clouds
+
+`PointCloud2` is a binary blob plus a description of its layout. Nothing
+decodes it into objects — a 100k-point cloud at 10 Hz would be a million
+allocations a second, which is why point cloud rendering in a naive client is
+unusable. `reader()` reads values in place, out of the same buffer the socket
+delivered:
+
+```dart
+final reader = cloud.reader();
+
+// Interleaved [x0,y0,z0, x1,y1,z1, ...], the layout a vertex buffer wants.
+// stride subsamples: a 200k-point cloud at stride 8 is 25k points, usually
+// indistinguishable on screen and eight times cheaper to draw.
+final points = reader.xyz(stride: 8);
+
+// Any field by name, whatever its declared datatype.
+final power = reader.readFloat('intensity', 0);
+```
+
+Non-finite points are skipped by `xyz()`: a cloud that is not `is_dense` uses
+NaN to mean "no return", and plotting those puts garbage at the origin.
+Integer fields are widened on read, so `intensity` behaves the same whether a
+driver declares it `float32` or `uint16`. A cloud whose `data` is shorter than
+its header claims — a truncated message — reports the points that actually
+arrived rather than throwing, since a partial cloud is still worth drawing.
+
 ### Fragmentation and CBOR do not mix
 
 `fragment_size` works over JSON — a 1.2 MB image at 64 KB a fragment

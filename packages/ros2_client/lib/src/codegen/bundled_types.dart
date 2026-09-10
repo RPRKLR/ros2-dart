@@ -37,6 +37,8 @@ abstract final class BundledTypes {
     'sensor_msgs/JointState': 'JointState',
     'sensor_msgs/LaserScan': 'LaserScan',
     'sensor_msgs/NavSatFix': 'NavSatFix',
+    'sensor_msgs/PointCloud2': 'PointCloud2',
+    'sensor_msgs/PointField': 'PointField',
     'std_msgs/Bool': 'BoolMsg',
     'std_msgs/ColorRGBA': 'ColorRGBA',
     'std_msgs/Empty': 'EmptyMsg',

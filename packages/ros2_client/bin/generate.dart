@@ -74,6 +74,9 @@ Future<void> main(List<String> args) async {
   final done = <String>{};
   final generated = <String>[];
 
+  /// Where each package's definitions were actually read from.
+  final sources = <String, String>{};
+
   /// Fully qualified type names actually emitted, and those referenced.
   // Bundled types count as available: they are provided by the client rather
   // than generated, so referencing one is not a missing definition.
@@ -89,6 +92,11 @@ Future<void> main(List<String> args) async {
       totalFailures++;
       continue;
     }
+    // Provenance, not decoration. A sourced workspace puts its own overlays
+    // ahead of the distro install on AMENT_PREFIX_PATH, so a package can
+    // silently resolve to a private fork -- which is how unpublishable code
+    // ends up inside a package you intend to publish.
+    sources[package] = dir.path;
 
     final messages = <MessageDef>[];
     for (final file in _interfaceFiles(dir, 'msg', '.msg')) {
@@ -208,6 +216,26 @@ Future<void> main(List<String> args) async {
     stderr.writeln('!  The generated code will not compile until these are '
         'removed or provided.');
     totalFailures++;
+  }
+
+  final roots = <String>{
+    for (final path in sources.values) _rootOf(path),
+  }.toList()
+    ..sort();
+  if (roots.length > 1) {
+    // Worth calling out: a mix means some packages came from a workspace
+    // overlay and some from the distro install.
+    stdout.writeln('\nDefinitions read from ${roots.length} roots:');
+    for (final root in roots) {
+      final from = sources.entries
+          .where((e) => _rootOf(e.value) == root)
+          .map((e) => e.key)
+          .toList()
+        ..sort();
+      stdout.writeln('   $root  (${from.join(', ')})');
+    }
+  } else if (roots.isNotEmpty) {
+    stdout.writeln('\nDefinitions read from ${roots.single}');
   }
 
   stdout.writeln('\nGenerated $totalMessages messages into $outDir'
@@ -471,6 +499,12 @@ List<File> _interfaceFiles(Directory pkg, String subdir, String extension) {
       .where((f) => f.path.endsWith(extension))
       .toList()
     ..sort((a, b) => a.path.compareTo(b.path));
+}
+
+/// The search root a package directory sits under, for provenance reporting.
+String _rootOf(String packagePath) {
+  final parent = Directory(packagePath).parent.path;
+  return parent.isEmpty ? packagePath : parent;
 }
 
 Directory? _findPackage(String package, List<String> roots) {

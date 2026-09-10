@@ -14,6 +14,21 @@ if [[ -z "${ROS_DISTRO:-}" ]]; then
   exit 1
 fi
 
+# Only the distro install, never a sourced workspace.
+#
+# The generator searches AMENT_PREFIX_PATH in order, and a workspace overlay
+# comes first. On a developer machine with a robot workspace sourced, asking
+# for a package that the overlay also provides would quietly bake that private
+# fork into a package meant for pub.dev. Pinning the search root makes this
+# script produce the same output on any machine, which is also what lets the
+# committed result be diffed rather than trusted.
+distro_root="/opt/ros/$ROS_DISTRO"
+if [[ ! -d "$distro_root/share" ]]; then
+  echo "No $distro_root/share -- expected a system ROS install." >&2
+  exit 1
+fi
+export AMENT_PREFIX_PATH="$distro_root"
+
 # Requested explicitly. Transitive dependencies (unique_identifier_msgs,
 # trajectory_msgs, and the parts of geometry_msgs and std_msgs that ros2_client
 # does not already bundle) are pulled in automatically.
@@ -31,7 +46,7 @@ PACKAGES=(
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 out="$here/lib/src/msgs"
 
-echo "Regenerating from ROS $ROS_DISTRO into $out"
+echo "Regenerating from ROS $ROS_DISTRO ($distro_root) into $out"
 rm -f "$out"/*.dart
 (cd "$here/../ros2_client" && dart run bin/generate.dart -o "$out" "${PACKAGES[@]}")
 dart format "$out" > /dev/null
@@ -52,4 +67,11 @@ export 'src/msgs/$name.dart';
 EOF
 done
 
+# Fail loudly rather than shipping something that came from elsewhere.
+if grep -rlq "$HOME" "$out"/*.dart 2>/dev/null; then
+  echo "A generated file references a path under \$HOME; refusing." >&2
+  exit 1
+fi
+
 echo "Done. Review the diff before committing."
+echo "Every package above should have resolved under $distro_root."

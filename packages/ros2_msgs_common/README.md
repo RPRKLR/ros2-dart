@@ -69,6 +69,26 @@ Review the diff afterwards — a distro bump can change field types.
 
 ## Provenance
 
+Every type here comes from a stock `ros-humble-*` apt package. Nothing from a
+local workspace is included, and `tool/regenerate.sh` pins
+`AMENT_PREFIX_PATH` to `/opt/ros/$ROS_DISTRO` so it cannot be.
+
+That pin matters. The generator searches `AMENT_PREFIX_PATH` in order and a
+sourced workspace overlay comes *first*, so on a developer machine with a robot
+workspace sourced, asking for a package the overlay also provides would quietly
+bake that private fork into a package meant for pub.dev. The generator now
+prints which root each package resolved from, so the provenance is visible in
+the run rather than assumed.
+
+To audit the committed output yourself:
+
+```bash
+# Every ROS type name in the package, mapped to the apt package that owns it.
+grep -rhoE "'[a-z0-9_]+/(msg|srv|action)/[A-Za-z0-9_]+'" lib/src/msgs/*.dart \
+  | tr -d "'" | cut -d/ -f1 | sort -u \
+  | xargs -I{} sh -c 'dpkg -S /opt/ros/humble/share/{} 2>/dev/null || echo "{} NOT APT"'
+```
+
 Generated from ROS 2 Humble's `.msg`, `.srv` and `.action` definitions with
 `dart run ros2_client:generate`. Those definitions are published by the ROS 2
 project under Apache-2.0 (and BSD-3-Clause for some packages); the generated
