@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import '../messages/geometry_msgs.dart';
 
@@ -162,6 +163,32 @@ extension TransformMath on RosTransform {
         translation: translation.lerp(other.translation, t),
         rotation: rotation.slerp(other.rotation, t),
       );
+
+  /// The equivalent 4x4 homogeneous matrix, **column-major** with 16 entries.
+  ///
+  /// That is the layout `Matrix4.fromFloat64List` and OpenGL expect, so a
+  /// render layer can consume this without transposing. Returning a
+  /// `Float64List` rather than a `Matrix4` keeps this package free of a
+  /// `vector_math` dependency.
+  Float64List toMatrix4() {
+    final q = rotation;
+    final xx = q.x * q.x;
+    final yy = q.y * q.y;
+    final zz = q.z * q.z;
+    final xy = q.x * q.y;
+    final xz = q.x * q.z;
+    final yz = q.y * q.z;
+    final wx = q.w * q.x;
+    final wy = q.w * q.y;
+    final wz = q.w * q.z;
+
+    return Float64List.fromList([
+      1 - 2 * (yy + zz), 2 * (xy + wz), 2 * (xz - wy), 0,
+      2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx), 0,
+      2 * (xz + wy), 2 * (yz - wx), 1 - 2 * (xx + yy), 0,
+      translation.x, translation.y, translation.z, 1,
+    ]);
+  }
 
   static const RosTransform identity = RosTransform();
 }

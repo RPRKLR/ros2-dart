@@ -101,16 +101,40 @@ something teams adopt.
 values, `constant` vs `field`) that naive parsers get wrong. Test against the
 full `common_interfaces` repo, not a handful of examples.
 
-## v0.3 — Transforms
+## v0.3 — Transforms ✅ *shipped*
 
 TF is the piece every real robot UI needs and no Dart package has.
 
-- `tf2` buffer with time-interpolated lookups
-- Subscribe `/tf` + `/tf_static` (the latter needs `transient_local` QoS —
-  already supported)
-- `lookupTransform(target, source, time)` with proper extrapolation errors
-- Quaternion/Euler/matrix conversions, and pose transformation helpers
-- Widget: `TfFrameBuilder` to position markers in a chosen frame
+- `TfBuffer`: the frame tree, time-interpolated lookups (slerp on rotation),
+  a per-frame cache window, and out-of-order sample insertion
+- `TfListener` feeding it from `/tf` and `/tf_static`, the latter over
+  `transient_local` so a late joiner still receives the latched frames
+- `lookupOrThrow(target, source, time)` with failure messages that name the
+  known frames and the buffered window, plus `lookup` for the `null` form
+- Quaternion/Euler/matrix conversions (`fromRpy`, `fromYaw`, `rpy`, `yaw`,
+  `toMatrix4`) and point/vector/pose transformation helpers
+- Widget: `TfFrameBuilder`, resolving a transform for the widget's lifetime
+
+Two decisions worth recording:
+
+**Timestamps are stored in microseconds, not nanoseconds.** `sec * 1e9` for a
+real epoch time exceeds 2^53, and Dart ints are doubles on the web — so the
+obvious nanosecond representation silently loses precision in exactly the
+place this package is meant to run.
+
+**One `TfListener` per `RosConnection`, not per widget.** `/tf` runs at
+50-200 Hz on a real robot. A listener per widget would multiply bridge traffic
+and decode cost by the number of widgets on screen, so `RosConnection.tfOf`
+hands every descendant the same listener, built lazily on first use.
+
+Rebuilds are left to `setState`, which already coalesces a burst between two
+frames into one rebuild; an update that leaves the transform unchanged does
+not rebuild at all. An earlier post-frame-callback throttle was removed — it
+added a second frame of latency and bought nothing.
+
+Still owed here: `TfBuffer` is only exercised against synthetic transforms.
+A real robot's tf tree — dozens of frames, static and dynamic mixed, clocks
+that jump on `/clock` — is unverified.
 
 ## v0.4 — Performance and scale
 

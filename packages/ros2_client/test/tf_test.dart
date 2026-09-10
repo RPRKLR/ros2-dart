@@ -312,4 +312,68 @@ void main() {
       expect(buffer.parentOf('map'), isNull);
     });
   });
+
+  group('Euler and matrix conversions', () {
+    test('fromRpy round-trips through rpy', () {
+      // Deliberately off-axis: an all-zero or single-axis case passes even
+      // with the multiplication order wrong.
+      const roll = 0.3;
+      const pitch = -0.7;
+      const yaw = 2.1;
+
+      final q = Quaternion.fromRpy(roll, pitch, yaw);
+      expect(q.norm, closeTo(1.0, 1e-12));
+
+      final back = q.rpy;
+      expect(back.roll, closeTo(roll, 1e-9));
+      expect(back.pitch, closeTo(pitch, 1e-9));
+      expect(back.yaw, closeTo(yaw, 1e-9));
+    });
+
+    test('fromRpy applies fixed-axis XYZ order', () {
+      // Composed as yaw * pitch * roll about the fixed axes; the reverse
+      // order gives a different rotation for these angles.
+      final composed = Quaternion.fromYaw(2.1) *
+          Quaternion.fromRpy(0, -0.7, 0) *
+          Quaternion.fromRpy(0.3, 0, 0);
+      final direct = Quaternion.fromRpy(0.3, -0.7, 2.1);
+
+      expect(direct.x, closeTo(composed.x, 1e-12));
+      expect(direct.y, closeTo(composed.y, 1e-12));
+      expect(direct.z, closeTo(composed.z, 1e-12));
+      expect(direct.w, closeTo(composed.w, 1e-12));
+    });
+
+    test('fromYaw rotates in the +Z sense', () {
+      final q = Quaternion.fromYaw(math.pi / 2);
+      expectVector(q.rotate(const Vector3(x: 1)), 0, 1, 0, tol: 1e-9);
+      expect(q.yaw, closeTo(math.pi / 2, 1e-9));
+    });
+
+    test('toMatrix4 is column-major and agrees with transformPoint', () {
+      final t = RosTransform(
+        translation: const Vector3(x: 1, y: 2, z: 3),
+        rotation: Quaternion.fromRpy(0.3, -0.7, 2.1),
+      );
+      final m = t.toMatrix4();
+
+      expect(m, hasLength(16));
+      // Translation lives in the last column, which in column-major order is
+      // the last four entries — transposing this is the classic bug.
+      expect(m[12], closeTo(1, 1e-12));
+      expect(m[13], closeTo(2, 1e-12));
+      expect(m[14], closeTo(3, 1e-12));
+      expect(m[15], closeTo(1, 1e-12));
+
+      const p = Point(x: 0.4, y: -1.3, z: 2.2);
+      final expected = t.transformPoint(p);
+      // Column-major m: element (row, col) is m[col * 4 + row].
+      expect(m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12],
+          closeTo(expected.x, 1e-9));
+      expect(m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13],
+          closeTo(expected.y, 1e-9));
+      expect(m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14],
+          closeTo(expected.z, 1e-9));
+    });
+  });
 }

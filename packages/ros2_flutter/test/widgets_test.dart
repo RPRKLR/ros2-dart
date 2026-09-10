@@ -44,6 +44,30 @@ final class _FakeTransport implements RosTransport {
   return (client: client, transport: transport);
 }
 
+/// A `tf2_msgs/msg/TFMessage` wire frame with a single transform.
+Map<String, Object?> tfFrame(
+  String parent,
+  String child, {
+  double x = 0,
+  double y = 0,
+  int sec = 0,
+}) =>
+    {
+      'transforms': [
+        {
+          'header': {
+            'stamp': {'sec': sec, 'nanosec': 0},
+            'frame_id': parent,
+          },
+          'child_frame_id': child,
+          'transform': {
+            'translation': {'x': x, 'y': y, 'z': 0.0},
+            'rotation': {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0},
+          },
+        },
+      ],
+    };
+
 void main() {
   setUpAll(registerStandardMessages);
 
@@ -206,5 +230,156 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('TfFrameBuilder resolves a transform once /tf arrives',
+      (tester) async {
+    final fake = fakeClient();
+    addTearDown(fake.client.close);
+    RosTransform? seen;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RosConnection.withClient(
+          client: fake.client,
+          child: TfFrameBuilder(
+            targetFrame: 'map',
+            sourceFrame: 'base_link',
+            builder: (context, transform) {
+              seen = transform;
+              return const SizedBox();
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(seen, isNull, reason: 'nothing is known before /tf arrives');
+
+    // Both topics must be subscribed, and /tf_static needs transient-local
+    // durability or a late joiner never receives the latched frames.
+    final subs = fake.transport.sent.where((m) => m['op'] == 'subscribe');
+    expect(subs.map((m) => m['topic']), containsAll(['/tf', '/tf_static']));
+    final staticSub = subs.firstWhere((m) => m['topic'] == '/tf_static');
+    expect((staticSub['qos']! as Map)['durability'], 'transient_local');
+
+    // map -> odom static, odom -> base_link dynamic: the lookup has to walk
+    // the chain and compose both.
+    fake.transport.publish('/tf_static', tfFrame('map', 'odom', x: 1.0));
+    fake.transport.publish('/tf', tfFrame('odom', 'base_link', y: 2.0));
+    await tester.pump();
+    await tester.pump();
+
+    expect(seen, isNotNull);
+    expect(seen!.translation.x, closeTo(1.0, 1e-9));
+    expect(seen!.translation.y, closeTo(2.0, 1e-9));
+  });
+
+  testWidgets('TfFrameBuilder coalesces a burst of updates into one rebuild',
+      (tester) async {
+    final fake = fakeClient();
+    addTearDown(fake.client.close);
+    var builds = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RosConnection.withClient(
+          client: fake.client,
+          child: TfFrameBuilder(
+            targetFrame: 'odom',
+            sourceFrame: 'base_link',
+            builder: (context, transform) {
+              builds++;
+              return const SizedBox();
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final before = builds;
+
+    // 20 updates between two frames must not cause 20 rebuilds; /tf on a real
+    // robot runs far faster than the display refreshes.
+    for (var i = 0; i < 20; i++) {
+      fake.transport.publish('/tf', tfFrame('odom', 'base_link', x: i * 0.1));
+    }
+    await tester.pump();
+    await tester.pump();
+
+    expect(builds - before, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('TfFrameBuilder reports why a lookup fails', (tester) async {
+    final fake = fakeClient();
+    addTearDown(fake.client.close);
+    final errors = <String>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RosConnection.withClient(
+          client: fake.client,
+          child: TfFrameBuilder(
+            targetFrame: 'map',
+            sourceFrame: 'camera_link',
+            onError: (error) => errors.add(error.message),
+            builder: (context, transform) => const SizedBox(),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(errors, isNotEmpty);
+    expect(errors.first, contains('camera_link'));
+
+    // Settle the tree first: the message names the known frames, so it
+    // legitimately changes while new frames are still appearing.
+    fake.transport.publish('/tf', tfFrame('odom', 'base_link'));
+    await tester.pump();
+    await tester.pump();
+    final count = errors.length;
+
+    // Once the tree stops changing, repeated failures for the same reason
+    // must not spam the callback — /tf would otherwise log 100x a second.
+    for (var i = 0; i < 20; i++) {
+      fake.transport.publish('/tf', tfFrame('odom', 'base_link', x: i * 0.1));
+    }
+    await tester.pump();
+    await tester.pump();
+    expect(errors.length, count);
+    expect(errors.last, contains('camera_link'));
+  });
+
+  testWidgets('one TfListener is shared across the subtree', (tester) async {
+    final fake = fakeClient();
+    addTearDown(fake.client.close);
+    final listeners = <TfListener>{};
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RosConnection.withClient(
+          client: fake.client,
+          child: Column(
+            children: [
+              for (var i = 0; i < 3; i++)
+                Builder(builder: (context) {
+                  listeners.add(RosConnection.tfOf(context));
+                  return const SizedBox();
+                }),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(listeners, hasLength(1));
+    final tfSubs = fake.transport.sent
+        .where((m) => m['op'] == 'subscribe' && m['topic'] == '/tf');
+    expect(tfSubs, hasLength(1), reason: '/tf must be subscribed exactly once');
   });
 }

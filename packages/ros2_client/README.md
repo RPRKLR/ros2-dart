@@ -280,8 +280,17 @@ map
 ```
 
 Transform maths is available on the message types directly —
-`Quaternion.fromYaw`, `.yaw`, `.rpy`, `.slerp`, `.rotate(v)`, and
+`Quaternion.fromYaw`, `.fromRpy`, `.yaw`, `.rpy`, `.slerp`, `.rotate(v)`, and
 `RosTransform.compose`, `.inverse`, `.transformPoint`, `.transformPose`.
+
+For rendering, `RosTransform.toMatrix4()` gives the 4x4 homogeneous matrix as
+a **column-major** `Float64List` — the layout `Matrix4.fromFloat64List` and
+OpenGL expect, so nothing needs transposing. It returns a `Float64List` rather
+than a `Matrix4` to keep this package free of a `vector_math` dependency.
+
+Flutter apps should reach for `TfFrameBuilder` in `package:ros2_flutter`
+instead of driving a `TfListener` by hand: it shares one listener across the
+whole widget tree and rebuilds only when the transform actually changes.
 
 ## Parameters
 

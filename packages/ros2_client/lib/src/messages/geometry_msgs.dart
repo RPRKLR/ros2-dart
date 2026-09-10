@@ -80,6 +80,26 @@ final class Quaternion implements RosMessage {
         w: math.cos(radians / 2),
       );
 
+  /// A rotation from roll, pitch and yaw in radians.
+  ///
+  /// XYZ fixed-axis, per REP-103: roll about X, then pitch about Y, then yaw
+  /// about Z, each about the *fixed* frame rather than the rotated one. This
+  /// is the inverse of the `rpy` getter in `TransformMath`.
+  factory Quaternion.fromRpy(double roll, double pitch, double yaw) {
+    final cr = math.cos(roll / 2);
+    final sr = math.sin(roll / 2);
+    final cp = math.cos(pitch / 2);
+    final sp = math.sin(pitch / 2);
+    final cy = math.cos(yaw / 2);
+    final sy = math.sin(yaw / 2);
+    return Quaternion(
+      w: cr * cp * cy + sr * sp * sy,
+      x: sr * cp * cy - cr * sp * sy,
+      y: cr * sp * cy + sr * cp * sy,
+      z: cr * cp * sy - sr * sp * cy,
+    );
+  }
+
   static const Quaternion identity = Quaternion();
   final double x, y, z, w;
 

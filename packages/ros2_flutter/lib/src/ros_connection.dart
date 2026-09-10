@@ -71,6 +71,23 @@ class RosConnection extends StatefulWidget {
       .dependOnInheritedWidgetOfExactType<_RosScope>()
       ?.client;
 
+  /// The [TfListener] shared by everything under the nearest [RosConnection],
+  /// started on first use and stopped when the connection is disposed.
+  ///
+  /// Sharing matters: `/tf` on a real robot runs at 50-200 Hz, so a listener
+  /// per widget would multiply both the bridge traffic and the decode cost by
+  /// the number of widgets on screen.
+  static TfListener tfOf(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<_RosScope>();
+    if (scope == null) {
+      throw FlutterError(
+        'RosConnection.tfOf() found no RosConnection ancestor.\n'
+        'Wrap the widget tree above this point in a RosConnection.',
+      );
+    }
+    return scope.state._sharedTf();
+  }
+
   @override
   State<RosConnection> createState() => _RosConnectionState();
 }
@@ -78,6 +95,23 @@ class RosConnection extends StatefulWidget {
 class _RosConnectionState extends State<RosConnection>
     with WidgetsBindingObserver {
   late Ros2Client _client;
+  TfListener? _tf;
+
+  /// Built lazily so apps that never touch TF never subscribe to `/tf`.
+  TfListener _sharedTf() {
+    var tf = _tf;
+    if (tf == null) {
+      tf = TfListener(_client);
+      _tf = tf;
+      tf.start();
+    }
+    return tf;
+  }
+
+  void _disposeTf() {
+    _tf?.stop();
+    _tf = null;
+  }
 
   @override
   void initState() {
@@ -106,6 +140,7 @@ class _RosConnectionState extends State<RosConnection>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.uri != widget.uri || oldWidget.client != widget.client) {
       final old = _client;
+      _disposeTf();
       _client = _build();
       _connect();
       if (oldWidget.client == null) old.close();
@@ -123,6 +158,7 @@ class _RosConnectionState extends State<RosConnection>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _disposeTf();
     if (widget.client == null || widget.closeClientOnDispose) {
       _client.close();
     }
@@ -131,13 +167,18 @@ class _RosConnectionState extends State<RosConnection>
 
   @override
   Widget build(BuildContext context) =>
-      _RosScope(client: _client, child: widget.child);
+      _RosScope(client: _client, state: this, child: widget.child);
 }
 
 class _RosScope extends InheritedWidget {
-  const _RosScope({required this.client, required super.child});
+  const _RosScope({
+    required this.client,
+    required this.state,
+    required super.child,
+  });
 
   final Ros2Client client;
+  final _RosConnectionState state;
 
   @override
   bool updateShouldNotify(_RosScope oldWidget) => oldWidget.client != client;
