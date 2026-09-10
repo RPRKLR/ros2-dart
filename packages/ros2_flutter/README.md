@@ -2,6 +2,22 @@
 
 Flutter widgets for ROS 2, built on [`ros2_client`](../ros2_client).
 
+<p align="center">
+  <img src="doc/images/laser_scan.gif" width="380"
+       alt="A LaserScan plotted top-down as the robot moves through a room">
+  &nbsp;&nbsp;
+  <img src="doc/images/teleop.gif" width="240"
+       alt="The teleop joystick publishing Twist messages while held">
+</p>
+
+<p align="center"><sub>
+Both rendered by <code>test/goldens</code> against an in-memory transport —
+the real widgets drawing real messages, not mock-ups. They double as visual
+regression tests.
+</sub></p>
+
+**[Installation](../../doc/installation.md) · [Tutorial](../../doc/tutorial.md)**
+
 Wrap your app in a `RosConnection` and the rest of the widgets find the client
 themselves — no plumbing, no manual subscription lifecycle.
 

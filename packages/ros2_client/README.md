@@ -6,6 +6,8 @@ Talks to a robot through [`rosbridge_suite`](https://github.com/RobotWebTools/ro
 over a single WebSocket, so it runs everywhere Dart runs — Android, iOS, Linux,
 macOS, Windows and the browser — with **no ROS installation on the client**.
 
+**[Installation](../../doc/installation.md) · [Tutorial](../../doc/tutorial.md)**
+
 ```dart
 final ros = Ros2Client(Uri.parse('ws://192.168.1.10:9090'));
 await ros.connect();

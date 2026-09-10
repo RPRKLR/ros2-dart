@@ -11,10 +11,18 @@ iOS, Linux, macOS, Windows and the web.
 | [`packages/ros2_flutter`](packages/ros2_flutter) | Flutter widgets: connection lifecycle, camera, lidar, teleop, tf |
 | [`packages/ros2_msgs_common`](packages/ros2_msgs_common) | Pre-generated classes for nav2, control, tf2, markers and friends |
 
-Repo: <https://github.com/RPRKLR/ros2-dart>
+<p align="center">
+  <img src="packages/ros2_flutter/doc/images/laser_scan.gif" width="380"
+       alt="A LaserScan plotted top-down as the robot moves through a room">
+  &nbsp;&nbsp;
+  <img src="packages/ros2_flutter/doc/images/teleop.gif" width="240"
+       alt="The teleop joystick publishing Twist messages while held">
+</p>
 
-See **[docs/ROADMAP.md](docs/ROADMAP.md)** for the plan and the state of the
-pub.dev landscape this targets.
+**[Installation](doc/installation.md) · [Tutorial](doc/tutorial.md) ·
+[Roadmap](docs/ROADMAP.md)**
+
+Repo: <https://github.com/RPRKLR/ros2-dart>
 
 ## Quick start
 
