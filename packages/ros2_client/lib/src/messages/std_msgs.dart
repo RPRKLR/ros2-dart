@@ -9,8 +9,8 @@ final class RosTime implements RosMessage {
   const RosTime({this.sec = 0, this.nanosec = 0});
 
   factory RosTime.fromJson(Map<String, Object?> json) => RosTime(
-        sec: Field.asInt(json['sec']),
-        nanosec: Field.asInt(json['nanosec']),
+        sec: Field.intAt(json, 'sec'),
+        nanosec: Field.intAt(json, 'nanosec'),
       );
 
   /// ROS times carry a non-negative nanosecond remainder, so the seconds must
@@ -60,8 +60,8 @@ final class RosDuration implements RosMessage {
   const RosDuration({this.sec = 0, this.nanosec = 0});
 
   factory RosDuration.fromJson(Map<String, Object?> json) => RosDuration(
-        sec: Field.asInt(json['sec']),
-        nanosec: Field.asInt(json['nanosec']),
+        sec: Field.intAt(json, 'sec'),
+        nanosec: Field.intAt(json, 'nanosec'),
       );
 
   /// As [RosTime.fromDateTime]: floor the seconds so the non-negative
@@ -99,7 +99,7 @@ final class Header implements RosMessage {
 
   factory Header.fromJson(Map<String, Object?> json) => Header(
         stamp: Field.asMessage(json['stamp'], RosTime.fromJson),
-        frameId: Field.asString(json['frame_id']),
+        frameId: Field.stringAt(json, 'frame_id'),
       );
 
   final RosTime stamp;
@@ -129,7 +129,7 @@ final class StringMsg implements RosMessage {
   const StringMsg([this.data = '']);
 
   factory StringMsg.fromJson(Map<String, Object?> json) =>
-      StringMsg(Field.asString(json['data']));
+      StringMsg(Field.stringAt(json, 'data'));
 
   final String data;
 
@@ -154,7 +154,7 @@ final class StringMsg implements RosMessage {
 final class BoolMsg implements RosMessage {
   const BoolMsg([this.data = false]);
   factory BoolMsg.fromJson(Map<String, Object?> json) =>
-      BoolMsg(Field.asBool(json['data']));
+      BoolMsg(Field.boolAt(json, 'data'));
   final bool data;
   @override
   String get rosType => 'std_msgs/msg/Bool';
@@ -171,7 +171,7 @@ final class BoolMsg implements RosMessage {
 final class Int32Msg implements RosMessage {
   const Int32Msg([this.data = 0]);
   factory Int32Msg.fromJson(Map<String, Object?> json) =>
-      Int32Msg(Field.asInt(json['data']));
+      Int32Msg(Field.intAt(json, 'data'));
   final int data;
   @override
   String get rosType => 'std_msgs/msg/Int32';
@@ -188,7 +188,7 @@ final class Int32Msg implements RosMessage {
 final class Float64Msg implements RosMessage {
   const Float64Msg([this.data = 0]);
   factory Float64Msg.fromJson(Map<String, Object?> json) =>
-      Float64Msg(Field.asDouble(json['data']));
+      Float64Msg(Field.doubleAt(json, 'data'));
   final double data;
   @override
   String get rosType => 'std_msgs/msg/Float64';
@@ -220,10 +220,11 @@ final class EmptyMsg implements RosMessage {
 final class ColorRGBA implements RosMessage {
   const ColorRGBA({this.r = 0, this.g = 0, this.b = 0, this.a = 1});
   factory ColorRGBA.fromJson(Map<String, Object?> json) => ColorRGBA(
-        r: Field.asDouble(json['r']),
-        g: Field.asDouble(json['g']),
-        b: Field.asDouble(json['b']),
-        a: Field.asDouble(json['a']),
+        r: Field.doubleAt(json, 'r'),
+        g: Field.doubleAt(json, 'g'),
+        b: Field.doubleAt(json, 'b'),
+        // std_msgs/ColorRGBA is opaque by default.
+        a: Field.doubleAt(json, 'a', 1),
       );
   final double r, g, b, a;
   @override

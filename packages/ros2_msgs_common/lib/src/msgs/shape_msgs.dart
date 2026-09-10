@@ -147,7 +147,7 @@ final class SolidPrimitive implements RosMessage {
         polygon = polygon ?? Polygon();
 
   factory SolidPrimitive.fromJson(Map<String, Object?> json) => SolidPrimitive(
-        type: Field.asInt(json['type']),
+        type: Field.intAt(json, 'type'),
         dimensions: Field.asFloat64List(json['dimensions']),
         polygon: Field.asMessage(json['polygon'], Polygon.fromJson),
       );

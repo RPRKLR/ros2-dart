@@ -32,7 +32,7 @@ final class Odometry implements RosMessage {
 
   factory Odometry.fromJson(Map<String, Object?> json) => Odometry(
         header: Field.asMessage(json['header'], Header.fromJson),
-        childFrameId: Field.asString(json['child_frame_id']),
+        childFrameId: Field.stringAt(json, 'child_frame_id'),
         // pose and twist are wrapped in *WithCovariance in the real message.
         pose: Field.asMessage(
             (json['pose'] as Map<String, Object?>?)?['pose'], Pose.fromJson),
@@ -108,9 +108,9 @@ final class MapMetaData implements RosMessage {
   });
 
   factory MapMetaData.fromJson(Map<String, Object?> json) => MapMetaData(
-        resolution: Field.asDouble(json['resolution']),
-        width: Field.asInt(json['width']),
-        height: Field.asInt(json['height']),
+        resolution: Field.doubleAt(json, 'resolution'),
+        width: Field.intAt(json, 'width'),
+        height: Field.intAt(json, 'height'),
         origin: Field.asMessage(json['origin'], Pose.fromJson),
       );
 

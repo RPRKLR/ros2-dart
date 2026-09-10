@@ -68,10 +68,10 @@ final class DiagnosticStatus implements RosMessage {
 
   factory DiagnosticStatus.fromJson(Map<String, Object?> json) =>
       DiagnosticStatus(
-        level: Field.asInt(json['level']),
-        name: Field.asString(json['name']),
-        message: Field.asString(json['message']),
-        hardwareId: Field.asString(json['hardware_id']),
+        level: Field.intAt(json, 'level'),
+        name: Field.stringAt(json, 'name'),
+        message: Field.stringAt(json, 'message'),
+        hardwareId: Field.stringAt(json, 'hardware_id'),
         values: Field.asList<KeyValue>(json['values'], KeyValue.fromJson),
       );
 
@@ -131,8 +131,8 @@ final class KeyValue implements RosMessage {
   });
 
   factory KeyValue.fromJson(Map<String, Object?> json) => KeyValue(
-        key: Field.asString(json['key']),
-        value: Field.asString(json['value']),
+        key: Field.stringAt(json, 'key'),
+        value: Field.stringAt(json, 'value'),
       );
 
   final String key;
@@ -175,7 +175,7 @@ final class AddDiagnosticsRequest implements RosMessage {
 
   factory AddDiagnosticsRequest.fromJson(Map<String, Object?> json) =>
       AddDiagnosticsRequest(
-        loadNamespace: Field.asString(json['load_namespace']),
+        loadNamespace: Field.stringAt(json, 'load_namespace'),
       );
 
   final String loadNamespace;
@@ -216,8 +216,8 @@ final class AddDiagnosticsResponse implements RosMessage {
 
   factory AddDiagnosticsResponse.fromJson(Map<String, Object?> json) =>
       AddDiagnosticsResponse(
-        success: Field.asBool(json['success']),
-        message: Field.asString(json['message']),
+        success: Field.boolAt(json, 'success'),
+        message: Field.stringAt(json, 'message'),
       );
 
   final bool success;
@@ -283,8 +283,8 @@ final class SelfTestResponse implements RosMessage {
 
   factory SelfTestResponse.fromJson(Map<String, Object?> json) =>
       SelfTestResponse(
-        id: Field.asString(json['id']),
-        passed: Field.asInt(json['passed']),
+        id: Field.stringAt(json, 'id'),
+        passed: Field.intAt(json, 'passed'),
         status: Field.asList<DiagnosticStatus>(
             json['status'], DiagnosticStatus.fromJson),
       );

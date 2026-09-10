@@ -16,8 +16,8 @@ final class State implements RosMessage {
   });
 
   factory State.fromJson(Map<String, Object?> json) => State(
-        id: Field.asInt(json['id']),
-        label: Field.asString(json['label']),
+        id: Field.intAt(json, 'id'),
+        label: Field.stringAt(json, 'label'),
       );
 
   static const int primaryStateUnknown = 0;
@@ -70,8 +70,8 @@ final class Transition implements RosMessage {
   });
 
   factory Transition.fromJson(Map<String, Object?> json) => Transition(
-        id: Field.asInt(json['id']),
-        label: Field.asString(json['label']),
+        id: Field.intAt(json, 'id'),
+        label: Field.stringAt(json, 'label'),
       );
 
   static const int transitionCreate = 0;
@@ -199,7 +199,7 @@ final class TransitionEvent implements RosMessage {
 
   factory TransitionEvent.fromJson(Map<String, Object?> json) =>
       TransitionEvent(
-        timestamp: Field.asInt(json['timestamp']),
+        timestamp: Field.intAt(json, 'timestamp'),
         transition: Field.asMessage(json['transition'], Transition.fromJson),
         startState: Field.asMessage(json['start_state'], State.fromJson),
         goalState: Field.asMessage(json['goal_state'], State.fromJson),
@@ -291,7 +291,7 @@ final class ChangeStateResponse implements RosMessage {
 
   factory ChangeStateResponse.fromJson(Map<String, Object?> json) =>
       ChangeStateResponse(
-        success: Field.asBool(json['success']),
+        success: Field.boolAt(json, 'success'),
       );
 
   final bool success;

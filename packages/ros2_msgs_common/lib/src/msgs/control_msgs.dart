@@ -267,8 +267,8 @@ final class GripperCommand implements RosMessage {
   });
 
   factory GripperCommand.fromJson(Map<String, Object?> json) => GripperCommand(
-        position: Field.asDouble(json['position']),
-        maxEffort: Field.asDouble(json['max_effort']),
+        position: Field.doubleAt(json, 'position'),
+        maxEffort: Field.doubleAt(json, 'max_effort'),
       );
 
   final double position;
@@ -360,11 +360,11 @@ final class JointComponentTolerance implements RosMessage {
 
   factory JointComponentTolerance.fromJson(Map<String, Object?> json) =>
       JointComponentTolerance(
-        jointName: Field.asString(json['joint_name']),
-        component: Field.asInt(json['component']),
-        position: Field.asDouble(json['position']),
-        velocity: Field.asDouble(json['velocity']),
-        acceleration: Field.asDouble(json['acceleration']),
+        jointName: Field.stringAt(json, 'joint_name'),
+        component: Field.intAt(json, 'component'),
+        position: Field.doubleAt(json, 'position'),
+        velocity: Field.doubleAt(json, 'velocity'),
+        acceleration: Field.doubleAt(json, 'acceleration'),
       );
 
   static const int xAxis = 1;
@@ -436,17 +436,17 @@ final class JointControllerState implements RosMessage {
   factory JointControllerState.fromJson(Map<String, Object?> json) =>
       JointControllerState(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
-        setPoint: Field.asDouble(json['set_point']),
-        processValue: Field.asDouble(json['process_value']),
-        processValueDot: Field.asDouble(json['process_value_dot']),
-        error: Field.asDouble(json['error']),
-        timeStep: Field.asDouble(json['time_step']),
-        command: Field.asDouble(json['command']),
-        p: Field.asDouble(json['p']),
-        i: Field.asDouble(json['i']),
-        d: Field.asDouble(json['d']),
-        iClamp: Field.asDouble(json['i_clamp']),
-        antiwindup: Field.asBool(json['antiwindup']),
+        setPoint: Field.doubleAt(json, 'set_point'),
+        processValue: Field.doubleAt(json, 'process_value'),
+        processValueDot: Field.doubleAt(json, 'process_value_dot'),
+        error: Field.doubleAt(json, 'error'),
+        timeStep: Field.doubleAt(json, 'time_step'),
+        command: Field.doubleAt(json, 'command'),
+        p: Field.doubleAt(json, 'p'),
+        i: Field.doubleAt(json, 'i'),
+        d: Field.doubleAt(json, 'd'),
+        iClamp: Field.doubleAt(json, 'i_clamp'),
+        antiwindup: Field.boolAt(json, 'antiwindup'),
       );
 
   final ros2.Header header;
@@ -537,7 +537,7 @@ final class JointJog implements RosMessage {
         jointNames: Field.asStringList(json['joint_names']),
         displacements: Field.asFloat64List(json['displacements']),
         velocities: Field.asFloat64List(json['velocities']),
-        duration: Field.asDouble(json['duration']),
+        duration: Field.doubleAt(json, 'duration'),
       );
 
   final ros2.Header header;
@@ -604,10 +604,10 @@ final class JointTolerance implements RosMessage {
   });
 
   factory JointTolerance.fromJson(Map<String, Object?> json) => JointTolerance(
-        name: Field.asString(json['name']),
-        position: Field.asDouble(json['position']),
-        velocity: Field.asDouble(json['velocity']),
-        acceleration: Field.asDouble(json['acceleration']),
+        name: Field.stringAt(json, 'name'),
+        position: Field.doubleAt(json, 'position'),
+        velocity: Field.doubleAt(json, 'velocity'),
+        acceleration: Field.doubleAt(json, 'acceleration'),
       );
 
   final String name;
@@ -812,12 +812,12 @@ final class MecanumDriveControllerState implements RosMessage {
       MecanumDriveControllerState(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
         frontLeftWheelVelocity:
-            Field.asDouble(json['front_left_wheel_velocity']),
-        backLeftWheelVelocity: Field.asDouble(json['back_left_wheel_velocity']),
+            Field.doubleAt(json, 'front_left_wheel_velocity'),
+        backLeftWheelVelocity: Field.doubleAt(json, 'back_left_wheel_velocity'),
         backRightWheelVelocity:
-            Field.asDouble(json['back_right_wheel_velocity']),
+            Field.doubleAt(json, 'back_right_wheel_velocity'),
         frontRightWheelVelocity:
-            Field.asDouble(json['front_right_wheel_velocity']),
+            Field.doubleAt(json, 'front_right_wheel_velocity'),
         referenceVelocity:
             Field.asMessage(json['reference_velocity'], ros2.Twist.fromJson),
       );
@@ -987,17 +987,17 @@ final class PidState implements RosMessage {
   factory PidState.fromJson(Map<String, Object?> json) => PidState(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
         timestep: Field.asMessage(json['timestep'], ros2.RosDuration.fromJson),
-        error: Field.asDouble(json['error']),
-        errorDot: Field.asDouble(json['error_dot']),
-        pError: Field.asDouble(json['p_error']),
-        iError: Field.asDouble(json['i_error']),
-        dError: Field.asDouble(json['d_error']),
-        pTerm: Field.asDouble(json['p_term']),
-        iTerm: Field.asDouble(json['i_term']),
-        dTerm: Field.asDouble(json['d_term']),
-        iMax: Field.asDouble(json['i_max']),
-        iMin: Field.asDouble(json['i_min']),
-        output: Field.asDouble(json['output']),
+        error: Field.doubleAt(json, 'error'),
+        errorDot: Field.doubleAt(json, 'error_dot'),
+        pError: Field.doubleAt(json, 'p_error'),
+        iError: Field.doubleAt(json, 'i_error'),
+        dError: Field.doubleAt(json, 'd_error'),
+        pTerm: Field.doubleAt(json, 'p_term'),
+        iTerm: Field.doubleAt(json, 'i_term'),
+        dTerm: Field.doubleAt(json, 'd_term'),
+        iMax: Field.doubleAt(json, 'i_max'),
+        iMin: Field.doubleAt(json, 'i_min'),
+        output: Field.doubleAt(json, 'output'),
       );
 
   final ros2.Header header;
@@ -1089,14 +1089,14 @@ final class SingleDOFState implements RosMessage {
   });
 
   factory SingleDOFState.fromJson(Map<String, Object?> json) => SingleDOFState(
-        name: Field.asString(json['name']),
-        reference: Field.asDouble(json['reference']),
-        feedback: Field.asDouble(json['feedback']),
-        feedbackDot: Field.asDouble(json['feedback_dot']),
-        error: Field.asDouble(json['error']),
-        errorDot: Field.asDouble(json['error_dot']),
-        timeStep: Field.asDouble(json['time_step']),
-        output: Field.asDouble(json['output']),
+        name: Field.stringAt(json, 'name'),
+        reference: Field.doubleAt(json, 'reference'),
+        feedback: Field.doubleAt(json, 'feedback'),
+        feedbackDot: Field.doubleAt(json, 'feedback_dot'),
+        error: Field.doubleAt(json, 'error'),
+        errorDot: Field.doubleAt(json, 'error_dot'),
+        timeStep: Field.doubleAt(json, 'time_step'),
+        output: Field.doubleAt(json, 'output'),
       );
 
   final String name;
@@ -1314,7 +1314,7 @@ final class QueryCalibrationStateResponse implements RosMessage {
 
   factory QueryCalibrationStateResponse.fromJson(Map<String, Object?> json) =>
       QueryCalibrationStateResponse(
-        isCalibrated: Field.asBool(json['is_calibrated']),
+        isCalibrated: Field.boolAt(json, 'is_calibrated'),
       );
 
   final bool isCalibrated;
@@ -1392,8 +1392,8 @@ final class QueryTrajectoryStateResponse implements RosMessage {
 
   factory QueryTrajectoryStateResponse.fromJson(Map<String, Object?> json) =>
       QueryTrajectoryStateResponse(
-        success: Field.asBool(json['success']),
-        message: Field.asString(json['message']),
+        success: Field.boolAt(json, 'success'),
+        message: Field.stringAt(json, 'message'),
         name: Field.asStringList(json['name']),
         position: Field.asFloat64List(json['position']),
         velocity: Field.asFloat64List(json['velocity']),
@@ -1546,8 +1546,8 @@ final class FollowJointTrajectoryResult implements RosMessage {
 
   factory FollowJointTrajectoryResult.fromJson(Map<String, Object?> json) =>
       FollowJointTrajectoryResult(
-        errorCode: Field.asInt(json['error_code']),
-        errorString: Field.asString(json['error_string']),
+        errorCode: Field.intAt(json, 'error_code'),
+        errorString: Field.stringAt(json, 'error_string'),
       );
 
   static const int successful = 0;
@@ -1726,10 +1726,10 @@ final class GripperCommandResult implements RosMessage {
 
   factory GripperCommandResult.fromJson(Map<String, Object?> json) =>
       GripperCommandResult(
-        position: Field.asDouble(json['position']),
-        effort: Field.asDouble(json['effort']),
-        stalled: Field.asBool(json['stalled']),
-        reachedGoal: Field.asBool(json['reached_goal']),
+        position: Field.doubleAt(json, 'position'),
+        effort: Field.doubleAt(json, 'effort'),
+        stalled: Field.boolAt(json, 'stalled'),
+        reachedGoal: Field.boolAt(json, 'reached_goal'),
       );
 
   /// The current gripper gap size (in meters)
@@ -1787,10 +1787,10 @@ final class GripperCommandFeedback implements RosMessage {
 
   factory GripperCommandFeedback.fromJson(Map<String, Object?> json) =>
       GripperCommandFeedback(
-        position: Field.asDouble(json['position']),
-        effort: Field.asDouble(json['effort']),
-        stalled: Field.asBool(json['stalled']),
-        reachedGoal: Field.asBool(json['reached_goal']),
+        position: Field.doubleAt(json, 'position'),
+        effort: Field.doubleAt(json, 'effort'),
+        stalled: Field.boolAt(json, 'stalled'),
+        reachedGoal: Field.boolAt(json, 'reached_goal'),
       );
 
   /// The current gripper gap size (in meters)
@@ -1969,8 +1969,8 @@ final class ParallelGripperCommandResult implements RosMessage {
   factory ParallelGripperCommandResult.fromJson(Map<String, Object?> json) =>
       ParallelGripperCommandResult(
         state: Field.asMessage(json['state'], ros2.JointState.fromJson),
-        stalled: Field.asBool(json['stalled']),
-        reachedGoal: Field.asBool(json['reached_goal']),
+        stalled: Field.boolAt(json, 'stalled'),
+        reachedGoal: Field.boolAt(json, 'reached_goal'),
       );
 
   /// The current gripper state.
@@ -2063,10 +2063,10 @@ final class PointHeadGoal implements RosMessage {
         target: Field.asMessage(json['target'], PointStamped.fromJson),
         pointingAxis:
             Field.asMessage(json['pointing_axis'], ros2.Vector3.fromJson),
-        pointingFrame: Field.asString(json['pointing_frame']),
+        pointingFrame: Field.stringAt(json, 'pointing_frame'),
         minDuration:
             Field.asMessage(json['min_duration'], ros2.RosDuration.fromJson),
-        maxVelocity: Field.asDouble(json['max_velocity']),
+        maxVelocity: Field.doubleAt(json, 'max_velocity'),
       );
 
   final PointStamped target;
@@ -2142,7 +2142,7 @@ final class PointHeadFeedback implements RosMessage {
 
   factory PointHeadFeedback.fromJson(Map<String, Object?> json) =>
       PointHeadFeedback(
-        pointingAngleError: Field.asDouble(json['pointing_angle_error']),
+        pointingAngleError: Field.doubleAt(json, 'pointing_angle_error'),
       );
 
   final double pointingAngleError;
@@ -2180,10 +2180,10 @@ final class SingleJointPositionGoal implements RosMessage {
 
   factory SingleJointPositionGoal.fromJson(Map<String, Object?> json) =>
       SingleJointPositionGoal(
-        position: Field.asDouble(json['position']),
+        position: Field.doubleAt(json, 'position'),
         minDuration:
             Field.asMessage(json['min_duration'], ros2.RosDuration.fromJson),
-        maxVelocity: Field.asDouble(json['max_velocity']),
+        maxVelocity: Field.doubleAt(json, 'max_velocity'),
       );
 
   final double position;
@@ -2255,9 +2255,9 @@ final class SingleJointPositionFeedback implements RosMessage {
   factory SingleJointPositionFeedback.fromJson(Map<String, Object?> json) =>
       SingleJointPositionFeedback(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
-        position: Field.asDouble(json['position']),
-        velocity: Field.asDouble(json['velocity']),
-        error: Field.asDouble(json['error']),
+        position: Field.doubleAt(json, 'position'),
+        velocity: Field.doubleAt(json, 'velocity'),
+        error: Field.doubleAt(json, 'error'),
       );
 
   final ros2.Header header;

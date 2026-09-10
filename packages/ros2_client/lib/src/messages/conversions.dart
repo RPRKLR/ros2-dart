@@ -6,6 +6,48 @@ import 'dart:typed_data';
 /// These absorb the differences between rosbridge's JSON and CBOR encodings so
 /// generated code — and user code — never has to care which is in use.
 abstract final class Field {
+  /// Reads [key] from [json] as a double, distinguishing three cases that a
+  /// bare value cannot.
+  ///
+  /// * **Key absent** — the message did not carry this field, so [orAbsent]
+  ///   applies. That is the value the `.msg` declares, which is not always
+  ///   zero: `geometry_msgs/Quaternion` declares `float64 w 1`, and decoding
+  ///   an absent rotation as all-zeros produces the *invalid* quaternion. A
+  ///   zero quaternion behaves like identity when rotating a point but
+  ///   annihilates a Hamilton product, so one such link silently erases the
+  ///   rotation of an entire tf chain.
+  /// * **Value `null`** — rosbridge writes `null` for every non-finite float
+  ///   (`message_conversion.py`: "JSON does not support Inf and NaN. They are
+  ///   mapped to None"). `null` therefore means "no measurement", and NaN is
+  ///   how ROS spells that. Returning `0.0` turns an unknown battery charge
+  ///   into a confident zero and puts a NaN pose at the origin.
+  /// * **Value present** — decoded as [asDouble].
+  ///
+  /// The array converters have always mapped `null` to NaN; this brings
+  /// scalars into line with them.
+  static double doubleAt(Map<String, Object?> json, String key,
+      [double orAbsent = 0]) {
+    if (!json.containsKey(key)) return orAbsent;
+    final value = json[key];
+    return value == null ? double.nan : asDouble(value);
+  }
+
+  /// Reads [key] as an int, falling back to [orAbsent] when it is absent or
+  /// null. Unlike floats there is no "unknown" integer, so null is treated as
+  /// absent rather than mapped to a sentinel.
+  static int intAt(Map<String, Object?> json, String key, [int orAbsent = 0]) =>
+      json[key] == null ? orAbsent : asInt(json[key]);
+
+  /// Reads [key] as a bool, falling back to [orAbsent].
+  static bool boolAt(Map<String, Object?> json, String key,
+          [bool orAbsent = false]) =>
+      json[key] == null ? orAbsent : asBool(json[key]);
+
+  /// Reads [key] as a string, falling back to [orAbsent].
+  static String stringAt(Map<String, Object?> json, String key,
+          [String orAbsent = '']) =>
+      json[key] == null ? orAbsent : asString(json[key]);
+
   static double asDouble(Object? v) => switch (v) {
         final double d => d,
         final int i => i.toDouble(),
@@ -117,17 +159,38 @@ abstract final class Field {
       v is List ? v.map(asString).toList(growable: false) : const [];
 
   /// Decodes an array of nested messages.
+  ///
+  /// Accepts any `Map`, not only `Map<String, Object?>`: a hand-built message
+  /// or a fixture can easily hold `Map<Object?, Object?>`, and filtering those
+  /// out silently produced an *empty* array rather than an error.
+  ///
+  /// An element that is not a map is a corrupt message, and throws. Dropping
+  /// it would renumber everything after it — a path's waypoints shift by one,
+  /// with nothing to indicate they had. The client catches decode failures per
+  /// message and reports them on `status`, so one bad message is lost rather
+  /// than the subscription.
   static List<T> asList<T>(Object? v, T Function(Map<String, Object?>) from) {
     if (v is! List) return const [];
-    return v
-        .whereType<Map<String, Object?>>()
-        .map(from)
-        .toList(growable: false);
+    return List<T>.unmodifiable(v.map((element) {
+      if (element is Map<String, Object?>) return from(element);
+      if (element is Map<Object?, Object?>) {
+        return from(element.cast<String, Object?>());
+      }
+      throw FormatException(
+          'Expected a message in an array, got ${element.runtimeType}');
+    }));
   }
 
   /// Decodes a nested message, tolerating a missing field.
+  ///
+  /// An absent message decodes from an empty map, so every field falls back to
+  /// the default its `.msg` declares — which is why [doubleAt] takes one.
   static T asMessage<T>(Object? v, T Function(Map<String, Object?>) from) =>
-      from(v is Map<String, Object?> ? v : const {});
+      from(switch (v) {
+        final Map<String, Object?> m => m,
+        final Map<Object?, Object?> m => m.cast<String, Object?>(),
+        _ => const {},
+      });
 
   /// Encodes a `uint8[]` for the JSON wire form.
   static Object encodeBytes(Uint8List bytes) => base64Encode(bytes);

@@ -86,5 +86,29 @@ point after the first row.
 contract every other message honours. `PointCloud2.fromJson` also defaulted
 `height` to 0 and `is_dense` to false, disagreeing with its own constructor.
 
+**A `null` float decoded as `0.0` instead of NaN.** rosbridge writes `null` for
+every non-finite float, so `null` means "no measurement" — and NaN is how ROS
+spells that. An unknown battery charge read as a confident 0 %, and a NaN pose
+component rendered at the origin. The array converters had always mapped `null`
+to NaN; scalars now agree with them.
+
+**An absent nested message decoded to all zeros**, which for `Quaternion` is
+the *invalid* rotation rather than the identity its definition declares. A zero
+quaternion behaves like identity when rotating a point but annihilates a
+Hamilton product, so a single absent link silently erased the rotation of an
+entire tf chain — a 90° turn became no turn, with no exception and no NaN.
+
+Both are fixed by decoding against the key rather than the value:
+`Field.doubleAt(json, 'w', 1)` can tell an absent field from one sent as
+`null`, and carries the default the `.msg` declares. The generator emits these,
+and the old value-based helpers remain for code generated against 0.1.0.
+
+**`asList` silently dropped elements it could not type-match**, renumbering
+everything after them — a path's waypoints shifted by one with nothing to
+indicate they had. A loosely typed `Map<Object?, Object?>` element emptied the
+array entirely. Loose maps are now accepted; a genuinely corrupt element throws,
+which the client reports on `status` and costs one message rather than the
+subscription.
+
 Also: `wss://` verified against a TLS bridge, including certificate pinning
 for the self-signed case; CI added; the tree is now `dart format` clean.

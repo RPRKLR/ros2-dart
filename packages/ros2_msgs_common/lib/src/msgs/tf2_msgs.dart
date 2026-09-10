@@ -14,8 +14,8 @@ final class TF2Error implements RosMessage {
   });
 
   factory TF2Error.fromJson(Map<String, Object?> json) => TF2Error(
-        error: Field.asInt(json['error']),
-        errorString: Field.asString(json['error_string']),
+        error: Field.intAt(json, 'error'),
+        errorString: Field.stringAt(json, 'error_string'),
       );
 
   static const int noError = 0;
@@ -87,7 +87,7 @@ final class FrameGraphResponse implements RosMessage {
 
   factory FrameGraphResponse.fromJson(Map<String, Object?> json) =>
       FrameGraphResponse(
-        frameYaml: Field.asString(json['frame_yaml']),
+        frameYaml: Field.stringAt(json, 'frame_yaml'),
       );
 
   final String frameYaml;
@@ -132,13 +132,13 @@ final class LookupTransformGoal implements RosMessage {
 
   factory LookupTransformGoal.fromJson(Map<String, Object?> json) =>
       LookupTransformGoal(
-        targetFrame: Field.asString(json['target_frame']),
-        sourceFrame: Field.asString(json['source_frame']),
+        targetFrame: Field.stringAt(json, 'target_frame'),
+        sourceFrame: Field.stringAt(json, 'source_frame'),
         sourceTime: Field.asMessage(json['source_time'], ros2.RosTime.fromJson),
         timeout: Field.asMessage(json['timeout'], ros2.RosDuration.fromJson),
         targetTime: Field.asMessage(json['target_time'], ros2.RosTime.fromJson),
-        fixedFrame: Field.asString(json['fixed_frame']),
-        advanced: Field.asBool(json['advanced']),
+        fixedFrame: Field.stringAt(json, 'fixed_frame'),
+        advanced: Field.boolAt(json, 'advanced'),
       );
 
   final String targetFrame;

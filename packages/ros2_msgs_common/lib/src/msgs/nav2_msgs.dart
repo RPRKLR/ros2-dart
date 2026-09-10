@@ -66,9 +66,9 @@ final class BehaviorTreeStatusChange implements RosMessage {
   factory BehaviorTreeStatusChange.fromJson(Map<String, Object?> json) =>
       BehaviorTreeStatusChange(
         timestamp: Field.asMessage(json['timestamp'], ros2.RosTime.fromJson),
-        nodeName: Field.asString(json['node_name']),
-        previousStatus: Field.asString(json['previous_status']),
-        currentStatus: Field.asString(json['current_status']),
+        nodeName: Field.stringAt(json, 'node_name'),
+        previousStatus: Field.stringAt(json, 'previous_status'),
+        currentStatus: Field.stringAt(json, 'current_status'),
       );
 
   /// internal behavior tree event timestamp. Typically this is wall clock time
@@ -124,8 +124,8 @@ final class CollisionMonitorState implements RosMessage {
 
   factory CollisionMonitorState.fromJson(Map<String, Object?> json) =>
       CollisionMonitorState(
-        actionType: Field.asInt(json['action_type']),
-        polygonName: Field.asString(json['polygon_name']),
+        actionType: Field.intAt(json, 'action_type'),
+        polygonName: Field.stringAt(json, 'polygon_name'),
       );
 
   /// No action
@@ -233,10 +233,10 @@ final class CostmapFilterInfo implements RosMessage {
   factory CostmapFilterInfo.fromJson(Map<String, Object?> json) =>
       CostmapFilterInfo(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
-        type: Field.asInt(json['type']),
-        filterMaskTopic: Field.asString(json['filter_mask_topic']),
-        base: Field.asDouble(json['base']),
-        multiplier: Field.asDouble(json['multiplier']),
+        type: Field.intAt(json, 'type'),
+        filterMaskTopic: Field.stringAt(json, 'filter_mask_topic'),
+        base: Field.doubleAt(json, 'base'),
+        multiplier: Field.doubleAt(json, 'multiplier'),
       );
 
   final ros2.Header header;
@@ -301,10 +301,10 @@ final class CostmapMetaData implements RosMessage {
         mapLoadTime:
             Field.asMessage(json['map_load_time'], ros2.RosTime.fromJson),
         updateTime: Field.asMessage(json['update_time'], ros2.RosTime.fromJson),
-        layer: Field.asString(json['layer']),
-        resolution: Field.asDouble(json['resolution']),
-        sizeX: Field.asInt(json['size_x']),
-        sizeY: Field.asInt(json['size_y']),
+        layer: Field.stringAt(json, 'layer'),
+        resolution: Field.doubleAt(json, 'resolution'),
+        sizeX: Field.intAt(json, 'size_x'),
+        sizeY: Field.intAt(json, 'size_y'),
         origin: Field.asMessage(json['origin'], ros2.Pose.fromJson),
       );
 
@@ -367,8 +367,8 @@ final class EdgeCost implements RosMessage {
   });
 
   factory EdgeCost.fromJson(Map<String, Object?> json) => EdgeCost(
-        edgeid: Field.asInt(json['edgeid']),
-        cost: Field.asDouble(json['cost']),
+        edgeid: Field.intAt(json, 'edgeid'),
+        cost: Field.doubleAt(json, 'cost'),
       );
 
   final int edgeid;
@@ -409,7 +409,7 @@ final class Particle implements RosMessage {
 
   factory Particle.fromJson(Map<String, Object?> json) => Particle(
         pose: Field.asMessage(json['pose'], ros2.Pose.fromJson),
-        weight: Field.asDouble(json['weight']),
+        weight: Field.doubleAt(json, 'weight'),
       );
 
   final ros2.Pose pose;
@@ -493,7 +493,7 @@ final class RosRoute implements RosMessage {
 
   factory RosRoute.fromJson(Map<String, Object?> json) => RosRoute(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
-        routeCost: Field.asDouble(json['route_cost']),
+        routeCost: Field.doubleAt(json, 'route_cost'),
         nodes: Field.asList<RouteNode>(json['nodes'], RouteNode.fromJson),
         edges: Field.asList<RouteEdge>(json['edges'], RouteEdge.fromJson),
       );
@@ -549,7 +549,7 @@ final class RouteEdge implements RosMessage {
         end = end ?? ros2.Point();
 
   factory RouteEdge.fromJson(Map<String, Object?> json) => RouteEdge(
-        edgeid: Field.asInt(json['edgeid']),
+        edgeid: Field.intAt(json, 'edgeid'),
         start: Field.asMessage(json['start'], ros2.Point.fromJson),
         end: Field.asMessage(json['end'], ros2.Point.fromJson),
       );
@@ -595,7 +595,7 @@ final class RouteNode implements RosMessage {
   }) : position = position ?? ros2.Point();
 
   factory RouteNode.fromJson(Map<String, Object?> json) => RouteNode(
-        nodeid: Field.asInt(json['nodeid']),
+        nodeid: Field.intAt(json, 'nodeid'),
         position: Field.asMessage(json['position'], ros2.Point.fromJson),
       );
 
@@ -638,8 +638,8 @@ final class SpeedLimit implements RosMessage {
 
   factory SpeedLimit.fromJson(Map<String, Object?> json) => SpeedLimit(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
-        percentage: Field.asBool(json['percentage']),
-        speedLimit: Field.asDouble(json['speed_limit']),
+        percentage: Field.boolAt(json, 'percentage'),
+        speedLimit: Field.doubleAt(json, 'speed_limit'),
       );
 
   final ros2.Header header;
@@ -696,9 +696,9 @@ final class VoxelGrid implements RosMessage {
         origin: Field.asMessage(json['origin'], Point32.fromJson),
         resolutions:
             Field.asMessage(json['resolutions'], ros2.Vector3.fromJson),
-        sizeX: Field.asInt(json['size_x']),
-        sizeY: Field.asInt(json['size_y']),
-        sizeZ: Field.asInt(json['size_z']),
+        sizeX: Field.intAt(json, 'size_x'),
+        sizeY: Field.intAt(json, 'size_y'),
+        sizeZ: Field.intAt(json, 'size_z'),
       );
 
   final ros2.Header header;
@@ -760,7 +760,7 @@ final class ClearCostmapAroundRobotRequest implements RosMessage {
 
   factory ClearCostmapAroundRobotRequest.fromJson(Map<String, Object?> json) =>
       ClearCostmapAroundRobotRequest(
-        resetDistance: Field.asDouble(json['reset_distance']),
+        resetDistance: Field.doubleAt(json, 'reset_distance'),
       );
 
   final double resetDistance;
@@ -833,7 +833,7 @@ final class ClearCostmapExceptRegionRequest implements RosMessage {
 
   factory ClearCostmapExceptRegionRequest.fromJson(Map<String, Object?> json) =>
       ClearCostmapExceptRegionRequest(
-        resetDistance: Field.asDouble(json['reset_distance']),
+        resetDistance: Field.doubleAt(json, 'reset_distance'),
       );
 
   final double resetDistance;
@@ -1027,7 +1027,7 @@ final class DynamicEdgesResponse implements RosMessage {
 
   factory DynamicEdgesResponse.fromJson(Map<String, Object?> json) =>
       DynamicEdgesResponse(
-        success: Field.asBool(json['success']),
+        success: Field.boolAt(json, 'success'),
       );
 
   final bool success;
@@ -1172,7 +1172,7 @@ final class IsPathValidResponse implements RosMessage {
 
   factory IsPathValidResponse.fromJson(Map<String, Object?> json) =>
       IsPathValidResponse(
-        isValid: Field.asBool(json['is_valid']),
+        isValid: Field.boolAt(json, 'is_valid'),
         invalidPoseIndices: Field.asInt32List(json['invalid_pose_indices']),
       );
 
@@ -1216,7 +1216,7 @@ final class LoadMapRequest implements RosMessage {
   });
 
   factory LoadMapRequest.fromJson(Map<String, Object?> json) => LoadMapRequest(
-        mapUrl: Field.asString(json['map_url']),
+        mapUrl: Field.stringAt(json, 'map_url'),
       );
 
   final String mapUrl;
@@ -1255,7 +1255,7 @@ final class LoadMapResponse implements RosMessage {
   factory LoadMapResponse.fromJson(Map<String, Object?> json) =>
       LoadMapResponse(
         map: Field.asMessage(json['map'], ros2.OccupancyGrid.fromJson),
-        result: Field.asInt(json['result']),
+        result: Field.intAt(json, 'result'),
       );
 
   static const int resultSuccess = 0;
@@ -1299,7 +1299,7 @@ final class ManageLifecycleNodesRequest implements RosMessage {
 
   factory ManageLifecycleNodesRequest.fromJson(Map<String, Object?> json) =>
       ManageLifecycleNodesRequest(
-        command: Field.asInt(json['command']),
+        command: Field.intAt(json, 'command'),
       );
 
   static const int startup = 0;
@@ -1340,7 +1340,7 @@ final class ManageLifecycleNodesResponse implements RosMessage {
 
   factory ManageLifecycleNodesResponse.fromJson(Map<String, Object?> json) =>
       ManageLifecycleNodesResponse(
-        success: Field.asBool(json['success']),
+        success: Field.boolAt(json, 'success'),
       );
 
   final bool success;
@@ -1383,12 +1383,12 @@ final class SaveMapRequest implements RosMessage {
   });
 
   factory SaveMapRequest.fromJson(Map<String, Object?> json) => SaveMapRequest(
-        mapTopic: Field.asString(json['map_topic']),
-        mapUrl: Field.asString(json['map_url']),
-        imageFormat: Field.asString(json['image_format']),
-        mapMode: Field.asString(json['map_mode']),
-        freeThresh: Field.asDouble(json['free_thresh']),
-        occupiedThresh: Field.asDouble(json['occupied_thresh']),
+        mapTopic: Field.stringAt(json, 'map_topic'),
+        mapUrl: Field.stringAt(json, 'map_url'),
+        imageFormat: Field.stringAt(json, 'image_format'),
+        mapMode: Field.stringAt(json, 'map_mode'),
+        freeThresh: Field.doubleAt(json, 'free_thresh'),
+        occupiedThresh: Field.doubleAt(json, 'occupied_thresh'),
       );
 
   final String mapTopic;
@@ -1444,7 +1444,7 @@ final class SaveMapResponse implements RosMessage {
 
   factory SaveMapResponse.fromJson(Map<String, Object?> json) =>
       SaveMapResponse(
-        result: Field.asBool(json['result']),
+        result: Field.boolAt(json, 'result'),
       );
 
   final bool result;
@@ -1538,7 +1538,7 @@ final class SetRouteGraphRequest implements RosMessage {
 
   factory SetRouteGraphRequest.fromJson(Map<String, Object?> json) =>
       SetRouteGraphRequest(
-        graphFilepath: Field.asString(json['graph_filepath']),
+        graphFilepath: Field.stringAt(json, 'graph_filepath'),
       );
 
   final String graphFilepath;
@@ -1573,7 +1573,7 @@ final class SetRouteGraphResponse implements RosMessage {
 
   factory SetRouteGraphResponse.fromJson(Map<String, Object?> json) =>
       SetRouteGraphResponse(
-        success: Field.asBool(json['success']),
+        success: Field.boolAt(json, 'success'),
       );
 
   final bool success;
@@ -1729,7 +1729,7 @@ final class BackUpGoal implements RosMessage {
 
   factory BackUpGoal.fromJson(Map<String, Object?> json) => BackUpGoal(
         target: Field.asMessage(json['target'], ros2.Point.fromJson),
-        speed: Field.asDouble(json['speed']),
+        speed: Field.doubleAt(json, 'speed'),
         timeAllowance:
             Field.asMessage(json['time_allowance'], ros2.RosDuration.fromJson),
       );
@@ -1813,7 +1813,7 @@ final class BackUpFeedback implements RosMessage {
   });
 
   factory BackUpFeedback.fromJson(Map<String, Object?> json) => BackUpFeedback(
-        distanceTraveled: Field.asDouble(json['distance_traveled']),
+        distanceTraveled: Field.doubleAt(json, 'distance_traveled'),
       );
 
   final double distanceTraveled;
@@ -1856,12 +1856,12 @@ final class ComputeAndTrackRouteGoal implements RosMessage {
 
   factory ComputeAndTrackRouteGoal.fromJson(Map<String, Object?> json) =>
       ComputeAndTrackRouteGoal(
-        startId: Field.asInt(json['start_id']),
+        startId: Field.intAt(json, 'start_id'),
         start: Field.asMessage(json['start'], ros2.PoseStamped.fromJson),
-        goalId: Field.asInt(json['goal_id']),
+        goalId: Field.intAt(json, 'goal_id'),
         goal: Field.asMessage(json['goal'], ros2.PoseStamped.fromJson),
-        useStart: Field.asBool(json['use_start']),
-        usePoses: Field.asBool(json['use_poses']),
+        useStart: Field.boolAt(json, 'use_start'),
+        usePoses: Field.boolAt(json, 'use_poses'),
       );
 
   final int startId;
@@ -1979,13 +1979,13 @@ final class ComputeAndTrackRouteFeedback implements RosMessage {
 
   factory ComputeAndTrackRouteFeedback.fromJson(Map<String, Object?> json) =>
       ComputeAndTrackRouteFeedback(
-        lastNodeId: Field.asInt(json['last_node_id']),
-        nextNodeId: Field.asInt(json['next_node_id']),
-        currentEdgeId: Field.asInt(json['current_edge_id']),
+        lastNodeId: Field.intAt(json, 'last_node_id'),
+        nextNodeId: Field.intAt(json, 'next_node_id'),
+        currentEdgeId: Field.intAt(json, 'current_edge_id'),
         route: Field.asMessage(json['route'], RosRoute.fromJson),
         path: Field.asMessage(json['path'], ros2.RosPath.fromJson),
         operationsTriggered: Field.asStringList(json['operations_triggered']),
-        rerouted: Field.asBool(json['rerouted']),
+        rerouted: Field.boolAt(json, 'rerouted'),
       );
 
   final int lastNodeId;
@@ -2053,8 +2053,8 @@ final class ComputePathThroughPosesGoal implements RosMessage {
         goals: Field.asList<ros2.PoseStamped>(
             json['goals'], ros2.PoseStamped.fromJson),
         start: Field.asMessage(json['start'], ros2.PoseStamped.fromJson),
-        plannerId: Field.asString(json['planner_id']),
-        useStart: Field.asBool(json['use_start']),
+        plannerId: Field.stringAt(json, 'planner_id'),
+        useStart: Field.boolAt(json, 'use_start'),
       );
 
   final List<ros2.PoseStamped> goals;
@@ -2184,8 +2184,8 @@ final class ComputePathToPoseGoal implements RosMessage {
       ComputePathToPoseGoal(
         goal: Field.asMessage(json['goal'], ros2.PoseStamped.fromJson),
         start: Field.asMessage(json['start'], ros2.PoseStamped.fromJson),
-        plannerId: Field.asString(json['planner_id']),
-        useStart: Field.asBool(json['use_start']),
+        plannerId: Field.stringAt(json, 'planner_id'),
+        useStart: Field.boolAt(json, 'use_start'),
       );
 
   final ros2.PoseStamped goal;
@@ -2315,12 +2315,12 @@ final class ComputeRouteGoal implements RosMessage {
 
   factory ComputeRouteGoal.fromJson(Map<String, Object?> json) =>
       ComputeRouteGoal(
-        startId: Field.asInt(json['start_id']),
+        startId: Field.intAt(json, 'start_id'),
         start: Field.asMessage(json['start'], ros2.PoseStamped.fromJson),
-        goalId: Field.asInt(json['goal_id']),
+        goalId: Field.intAt(json, 'goal_id'),
         goal: Field.asMessage(json['goal'], ros2.PoseStamped.fromJson),
-        useStart: Field.asBool(json['use_start']),
-        usePoses: Field.asBool(json['use_poses']),
+        useStart: Field.boolAt(json, 'use_start'),
+        usePoses: Field.boolAt(json, 'use_poses'),
       );
 
   final int startId;
@@ -2474,7 +2474,7 @@ final class DriveOnHeadingGoal implements RosMessage {
   factory DriveOnHeadingGoal.fromJson(Map<String, Object?> json) =>
       DriveOnHeadingGoal(
         target: Field.asMessage(json['target'], ros2.Point.fromJson),
-        speed: Field.asDouble(json['speed']),
+        speed: Field.doubleAt(json, 'speed'),
         timeAllowance:
             Field.asMessage(json['time_allowance'], ros2.RosDuration.fromJson),
       );
@@ -2561,7 +2561,7 @@ final class DriveOnHeadingFeedback implements RosMessage {
 
   factory DriveOnHeadingFeedback.fromJson(Map<String, Object?> json) =>
       DriveOnHeadingFeedback(
-        distanceTraveled: Field.asDouble(json['distance_traveled']),
+        distanceTraveled: Field.doubleAt(json, 'distance_traveled'),
       );
 
   final double distanceTraveled;
@@ -2703,8 +2703,8 @@ final class FollowPathGoal implements RosMessage {
 
   factory FollowPathGoal.fromJson(Map<String, Object?> json) => FollowPathGoal(
         path: Field.asMessage(json['path'], ros2.RosPath.fromJson),
-        controllerId: Field.asString(json['controller_id']),
-        goalCheckerId: Field.asString(json['goal_checker_id']),
+        controllerId: Field.stringAt(json, 'controller_id'),
+        goalCheckerId: Field.stringAt(json, 'goal_checker_id'),
       );
 
   final ros2.RosPath path;
@@ -2788,8 +2788,8 @@ final class FollowPathFeedback implements RosMessage {
 
   factory FollowPathFeedback.fromJson(Map<String, Object?> json) =>
       FollowPathFeedback(
-        distanceToGoal: Field.asDouble(json['distance_to_goal']),
-        speed: Field.asDouble(json['speed']),
+        distanceToGoal: Field.doubleAt(json, 'distance_to_goal'),
+        speed: Field.doubleAt(json, 'speed'),
       );
 
   final double distanceToGoal;
@@ -2907,7 +2907,7 @@ final class FollowWaypointsFeedback implements RosMessage {
 
   factory FollowWaypointsFeedback.fromJson(Map<String, Object?> json) =>
       FollowWaypointsFeedback(
-        currentWaypoint: Field.asInt(json['current_waypoint']),
+        currentWaypoint: Field.intAt(json, 'current_waypoint'),
       );
 
   final int currentWaypoint;
@@ -2948,7 +2948,7 @@ final class NavigateThroughPosesGoal implements RosMessage {
       NavigateThroughPosesGoal(
         poses: Field.asList<ros2.PoseStamped>(
             json['poses'], ros2.PoseStamped.fromJson),
-        behaviorTree: Field.asString(json['behavior_tree']),
+        behaviorTree: Field.stringAt(json, 'behavior_tree'),
       );
 
   final List<ros2.PoseStamped> poses;
@@ -3040,9 +3040,9 @@ final class NavigateThroughPosesFeedback implements RosMessage {
             Field.asMessage(json['navigation_time'], ros2.RosDuration.fromJson),
         estimatedTimeRemaining: Field.asMessage(
             json['estimated_time_remaining'], ros2.RosDuration.fromJson),
-        numberOfRecoveries: Field.asInt(json['number_of_recoveries']),
-        distanceRemaining: Field.asDouble(json['distance_remaining']),
-        numberOfPosesRemaining: Field.asInt(json['number_of_poses_remaining']),
+        numberOfRecoveries: Field.intAt(json, 'number_of_recoveries'),
+        distanceRemaining: Field.doubleAt(json, 'distance_remaining'),
+        numberOfPosesRemaining: Field.intAt(json, 'number_of_poses_remaining'),
       );
 
   final ros2.PoseStamped currentPose;
@@ -3102,7 +3102,7 @@ final class NavigateToPoseGoal implements RosMessage {
   factory NavigateToPoseGoal.fromJson(Map<String, Object?> json) =>
       NavigateToPoseGoal(
         pose: Field.asMessage(json['pose'], ros2.PoseStamped.fromJson),
-        behaviorTree: Field.asString(json['behavior_tree']),
+        behaviorTree: Field.stringAt(json, 'behavior_tree'),
       );
 
   final ros2.PoseStamped pose;
@@ -3193,8 +3193,8 @@ final class NavigateToPoseFeedback implements RosMessage {
             Field.asMessage(json['navigation_time'], ros2.RosDuration.fromJson),
         estimatedTimeRemaining: Field.asMessage(
             json['estimated_time_remaining'], ros2.RosDuration.fromJson),
-        numberOfRecoveries: Field.asInt(json['number_of_recoveries']),
-        distanceRemaining: Field.asDouble(json['distance_remaining']),
+        numberOfRecoveries: Field.intAt(json, 'number_of_recoveries'),
+        distanceRemaining: Field.doubleAt(json, 'distance_remaining'),
       );
 
   final ros2.PoseStamped currentPose;
@@ -3252,10 +3252,10 @@ final class SmoothPathGoal implements RosMessage {
 
   factory SmoothPathGoal.fromJson(Map<String, Object?> json) => SmoothPathGoal(
         path: Field.asMessage(json['path'], ros2.RosPath.fromJson),
-        smootherId: Field.asString(json['smoother_id']),
+        smootherId: Field.stringAt(json, 'smoother_id'),
         maxSmoothingDuration: Field.asMessage(
             json['max_smoothing_duration'], ros2.RosDuration.fromJson),
-        checkForCollisions: Field.asBool(json['check_for_collisions']),
+        checkForCollisions: Field.boolAt(json, 'check_for_collisions'),
       );
 
   final ros2.RosPath path;
@@ -3311,7 +3311,7 @@ final class SmoothPathResult implements RosMessage {
         path: Field.asMessage(json['path'], ros2.RosPath.fromJson),
         smoothingDuration: Field.asMessage(
             json['smoothing_duration'], ros2.RosDuration.fromJson),
-        wasCompleted: Field.asBool(json['was_completed']),
+        wasCompleted: Field.boolAt(json, 'was_completed'),
       );
 
   final ros2.RosPath path;
@@ -3383,7 +3383,7 @@ final class SpinGoal implements RosMessage {
   }) : timeAllowance = timeAllowance ?? ros2.RosDuration();
 
   factory SpinGoal.fromJson(Map<String, Object?> json) => SpinGoal(
-        targetYaw: Field.asDouble(json['target_yaw']),
+        targetYaw: Field.doubleAt(json, 'target_yaw'),
         timeAllowance:
             Field.asMessage(json['time_allowance'], ros2.RosDuration.fromJson),
       );
@@ -3464,7 +3464,7 @@ final class SpinFeedback implements RosMessage {
 
   factory SpinFeedback.fromJson(Map<String, Object?> json) => SpinFeedback(
         angularDistanceTraveled:
-            Field.asDouble(json['angular_distance_traveled']),
+            Field.doubleAt(json, 'angular_distance_traveled'),
       );
 
   final double angularDistanceTraveled;

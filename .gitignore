@@ -10,3 +10,8 @@ pubspec.lock
 #   flutter test --update-goldens test/goldens/animation_test.dart
 # The GIFs themselves (packages/ros2_flutter/doc/images) are committed.
 packages/ros2_flutter/test/goldens/frames/
+
+# Local path overrides so the packages build against each other during
+# development. Not committed: they would ship in the published archive and
+# make `pub publish` warn. Recreate with ./tool/link_local.sh
+pubspec_overrides.yaml
