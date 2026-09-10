@@ -164,6 +164,24 @@ Future<void> main(List<String> args) async {
     expect(value == 128, 'read back $value');
   });
 
+  await check('parameters: setParam detects a parameter that does not exist',
+      () async {
+    // rosapi/set_param has an empty response section and swallows every
+    // error, so the service answers identically whether or not anything
+    // happened. setParam reads the value back; without that it can only ever
+    // return true. Measured cost on a live node: 32 ms.
+    final sw = Stopwatch()..start();
+    final bogusParam = await ros.setParam('/turtlesim:no_such_param', 5);
+    print('          verified write took ${sw.elapsedMilliseconds}ms');
+    expect(!bogusParam, 'a nonexistent parameter reported success');
+  });
+
+  await check('parameters: verify: false still claims success', () async {
+    final unverified =
+        await ros.setParam('/turtlesim:no_such_param', 1, verify: false);
+    expect(unverified, 'verify: false should return true regardless');
+  });
+
   await check('QoS: best-effort subscription still delivers', () async {
     final msg = await ros
         .subscribe<StringMsg>('/chatter', qos: QosProfile.sensorData)

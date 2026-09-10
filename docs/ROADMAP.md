@@ -333,25 +333,61 @@ Also fixed: `RosRawImageView` re-decoded the same retained frame every vsync
 the old socket and its timers; `RosTopicBuilder` ignored `compression` changes
 and called `onError` during build.
 
-### Still open from the audits
+### Closed since
 
-- `latch: true` is ignored, because the client always sends `qos` and
-  `publishers.py` documents `latch` as "ignored if qos is provided".
-- Per-subscription `throttle_rate` and `queue_length` are `min()`-merged
-  across every listener on a topic, so one unthrottled subscriber disables
-  throttling for all of them.
+**`latch: true` never latched.** rosbridge documents its `latch` flag as
+"ignored if qos is provided", and this client always provided `qos`, so late
+joiners to `/map` or `/robot_description` received nothing, forever. Latching
+in ROS 2 *is* transient-local durability, so that is what gets sent now.
+
+**`setParam` always reported success.** `rosapi/set_param` has an empty
+response section and `rosapi_node` swallows every error, so the service answers
+identically whether the node exists, the parameter exists, the type matches, or
+none of the above. It now reads the value back. Measured against turtlesim:
+31 ms for a real write, and correct `false` for both a nonexistent parameter
+and a nonexistent node. The failure path costs ~5 s because rosapi waits for a
+node that never answers — inherent, not ours.
+
+**The outbox dropped the newest and kept 256 stale commands.** Backwards: the
+newest command is the one that says what the operator wants now, and a stop
+issued during an outage is exactly the one that had to survive. Drops oldest
+now, and warns once.
+
+**`publishOnce` while offline** would have replayed a publish to a topic the
+client never advertised, since the surrounding advertise/unadvertise are
+rebuilt from live state rather than buffered. Discarded with a status message
+instead.
+
+**Interleaved fragments were spliced into corrupt messages.** Confirmed against
+the installed rosbridge: `fragmentation_seed` increments an instance attribute
+on an object rebuilt per send, so every fragmented message is labelled `"0"`.
+A repeated index is the only signal, and the client now discards the partial
+rather than splicing.
+
+**A second advertise with a different QoS** silently got the first profile,
+because `PublisherManager` fixes it at first registration. Warned now.
+
+### Still open
+
+These need the bridge configured differently, not client changes, so they are
+documented rather than fixed:
+
+- Per-subscription `throttle_rate` and `queue_length` are `min()`-merged across
+  every listener on a topic (`subscribe.py:225-239`), so one unthrottled
+  subscriber disables throttling for all of them. Detectable client-side; not
+  yet warned about.
 - `cancel_action_goal` cannot be delivered while a goal runs on a
-  default-launched bridge, because `send_action_goals_in_new_thread` defaults
-  false and the goal parks the client's only queue thread.
-- A hung service call wedges that same queue thread for the life of the
-  connection; the client-side timeout is bookkeeping only.
-- `rosapi/set_param` has no `successful` field, so `setParam` always reports
-  true.
-- Every fragmented message uses id `"0"` (`fragmentation_seed` increments an
-  instance attribute on a per-send object), so two topics fragmenting
-  concurrently interleave under one id.
-- `publishOnce` while offline replays a publish with no advertisement.
-- The outbox drops the *newest* commands on overflow and keeps 256 stale ones.
+  default-launched bridge: `send_action_goals_in_new_thread` defaults false and
+  `SendGoal.send_goal` busy-waits, parking the client's only queue thread.
+  Launch with `send_action_goals_in_new_thread:=true`.
+- A hung service call wedges that same thread for the life of the connection,
+  because `call_services_in_new_thread` defaults false and
+  `default_call_service_timeout` defaults `0.0`, meaning wait forever. The
+  client-side timeout is bookkeeping only. Launch with
+  `call_services_in_new_thread:=true`.
+- If any listener on a topic asks for `cbor-raw`, every listener on it gets
+  cbor-raw, and generated decoders then see none of their fields — a steady
+  stream of all-zero messages with no error.
 
 ## v0.4 — Performance and scale
 

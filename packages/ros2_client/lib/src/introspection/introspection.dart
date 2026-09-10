@@ -249,19 +249,56 @@ extension Ros2Introspection on Ros2Client {
   ///
   /// Returns `false` (with the reason on the [Ros2Client.status] stream) if the
   /// node rejected the write — read-only parameters are common.
+  /// Returns whether the value actually took effect, by reading it back.
+  ///
+  /// **`rosapi/set_param` cannot report failure.** Its `.srv` response section
+  /// is empty — there is no `successful` field — and `rosapi_node` swallows
+  /// every error: a `ValueError` is caught and logged, a name blocked by
+  /// `params_glob` returns early, and `call_set_parameters` runs inside
+  /// `contextlib.suppress(Exception)` without inspecting the result. So the
+  /// service answers identically whether the node exists, the parameter
+  /// exists, the type matches, the value is in range, or none of the above.
+  ///
+  /// Reading the value back is the only way to know. Pass `verify: false` to
+  /// skip it and get the old fire-and-forget behaviour, which always returns
+  /// true — including when nothing happened.
   Future<bool> setParam(String name, Object? value,
-      {Duration timeout = const Duration(seconds: 10)}) async {
+      {bool verify = true,
+      Duration timeout = const Duration(seconds: 10)}) async {
     _assertQualified(name, 'setParam');
-    final res = await callServiceJson(
+    await callServiceJson(
         '/rosapi/set_param',
         {
           'name': name,
           'value': jsonEncode(value),
         },
         timeout: timeout);
-    // rosbridge 2.0.x omits `successful` on success, so only an explicit
-    // false counts as a rejection.
-    return res['successful'] != false;
+    if (!verify) return true;
+
+    // A sentinel default distinguishes "missing" from "equals what I set":
+    // getParam returns the caller's default on any failure, so reusing `value`
+    // as the default would report success for a parameter that does not exist.
+    const missing = '\u0000ros2_client:absent';
+    final readBack =
+        await getParam(name, defaultValue: missing, timeout: timeout);
+    if (readBack == missing) return false;
+    return _paramEquals(readBack, value);
+  }
+
+  /// Compares a read-back parameter with what was written.
+  ///
+  /// Deliberately loose about numbers: a `1` written to a double parameter
+  /// reads back as `1.0`, and that is a success, not a mismatch.
+  static bool _paramEquals(Object? readBack, Object? written) {
+    if (readBack is num && written is num) return readBack == written;
+    if (readBack is List && written is List) {
+      if (readBack.length != written.length) return false;
+      for (var i = 0; i < readBack.length; i++) {
+        if (!_paramEquals(readBack[i], written[i])) return false;
+      }
+      return true;
+    }
+    return readBack == written;
   }
 
   /// Whether a parameter exists. [name] must be `<node>:<param>`.

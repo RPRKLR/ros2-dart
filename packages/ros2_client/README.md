@@ -459,6 +459,50 @@ Flutter apps should reach for `TfFrameBuilder` in `package:ros2_flutter`
 instead of driving a `TfListener` by hand: it shares one listener across the
 whole widget tree and rebuilds only when the transform actually changes.
 
+## Buffering, latching and other things that only look like they work
+
+**Publishes are buffered across a reconnect — unless you say they perish.**
+The outbox keeps up to 256 commands while offline and replays them on
+reconnect, which is right for a goal pose or a mode change and dangerous for a
+velocity. Advertise command topics accordingly:
+
+```dart
+final cmd = ros.advertise<Twist>('/cmd_vel', perishable: true);
+```
+
+Without that, a stalled link fills the buffer with motion commands and the
+robot is handed seconds of stale motion the moment it recovers — after the
+operator has let go. The buffer now drops the **oldest** on overflow, so the
+most recent command always survives, and warns once on `status`.
+
+**`latch: true` now actually latches.** rosbridge documents its `latch` flag as
+"ignored if qos is provided", and this client always provides `qos` — so the
+flag alone never did anything, and late joiners to `/map` or
+`/robot_description` received nothing, forever. Latching in ROS 2 *is*
+transient-local durability, so that is what gets sent. An explicitly
+transient-local profile is left alone.
+
+**`setParam` reads the value back.** `rosapi/set_param` has an empty response
+section — there is no `successful` field — and `rosapi_node` swallows every
+error, so the service answers identically whether the node exists, the
+parameter exists, the type matches, or none of the above. `setParam` therefore
+verifies by reading back, and returns what actually happened. Measured cost
+against a live node: **31 ms**. It is slow (~5 s) only when the node does not
+exist, because rosapi waits for a reply that never comes. Pass `verify: false`
+for the old fire-and-forget behaviour, which always returns true.
+
+**`publishOnce` while offline is discarded, loudly.** The advertise and
+unadvertise around it are rebuilt from live state on reconnect rather than
+buffered, so replaying the publish alone would send it to a topic this client
+never advertised. Hold a publisher from `advertise()` if the message must
+survive a reconnect.
+
+**Fragmented messages all share the id `"0"`.** rosbridge's
+`fragmentation_seed` increments an instance attribute on an object rebuilt per
+send, so the counter is read as `0` every time. Two topics fragmenting at once
+interleave under one id; the client detects the repeated index, discards the
+partial message rather than splicing a corrupt one, and warns once.
+
 ## Parameters
 
 ROS 2 parameters belong to a node, so names are `<node>:<param>`:

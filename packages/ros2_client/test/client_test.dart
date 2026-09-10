@@ -465,6 +465,195 @@ void main() {
     });
   });
 
+
+  group('buffering while offline', () {
+    test('the outbox drops the oldest, not the newest', () async {
+      await connect();
+      final pub = ros.advertise<StringMsg>('/chatter');
+      bridge.drop();
+      await pump();
+
+      // 300 into a 256-deep buffer. The last command is the one that says
+      // what the operator wants now; a stop issued during an outage must not
+      // be the one thrown away.
+      for (var i = 0; i < 300; i++) {
+        pub.publish(StringMsg('$i'));
+      }
+
+      final kept = <String>[];
+      for (final command in _outboxOf(ros)) {
+        final msg = command['msg'];
+        if (msg is Map && msg['data'] is String) kept.add(msg['data'] as String);
+      }
+      expect(kept, hasLength(Ros2Client.maxOutbox));
+      expect(kept.last, '299', reason: 'the newest command must survive');
+      expect(kept.first, '44', reason: 'the oldest are the ones dropped');
+    });
+
+    test('warns once when the outbox overflows', () async {
+      await connect();
+      final pub = ros.advertise<StringMsg>('/chatter');
+      final statuses = <RosStatus>[];
+      ros.status.listen(statuses.add);
+      bridge.drop();
+      await pump();
+
+      for (var i = 0; i < 300; i++) {
+        pub.publish(StringMsg('$i'));
+      }
+      await pump();
+
+      final overflow =
+          statuses.where((s) => s.message.contains('Outbox full')).toList();
+      expect(overflow, hasLength(1), reason: 'warn once, not 44 times');
+      expect(overflow.single.level, StatusLevel.warning);
+    });
+
+    test('a perishable publisher queues nothing at all', () async {
+      await connect();
+      final cmd = ros.advertise<Twist>('/cmd_vel', perishable: true);
+      bridge.drop();
+      await pump();
+
+      for (var i = 0; i < 50; i++) {
+        cmd.publish(Twist.drive(forward: 0.3));
+      }
+      expect(_outboxOf(ros), isEmpty,
+          reason: 'a stale velocity must never be replayed');
+    });
+
+    test('publishOnce while offline is discarded, and says so', () async {
+      await connect();
+      final statuses = <RosStatus>[];
+      ros.status.listen(statuses.add);
+      bridge.drop();
+      await pump();
+
+      ros.publishOnce<StringMsg>('/chatter', const StringMsg('hi'));
+      await pump();
+
+      // The advertise and unadvertise are dropped by the outbox and the
+      // publish would be replayed alone, to a topic this client never
+      // advertised.
+      expect(_outboxOf(ros), isEmpty);
+      expect(statuses.map((s) => s.message).join(),
+          contains('publishOnce to "/chatter" was discarded'));
+    });
+  });
+
+  group('latching', () {
+    test('latch is expressed as transient-local durability', () async {
+      await connect();
+      ros.advertise<StringMsg>('/robot_description', latch: true);
+
+      // rosbridge documents `latch` as "ignored if qos is provided", and this
+      // client always provides qos -- so the flag alone never latched
+      // anything and late joiners received nothing, forever.
+      final advertise = bridge.lastOf('advertise')!;
+      expect((advertise['qos']! as Map)['durability'], 'transient_local');
+      expect(advertise['latch'], isTrue);
+    });
+
+    test('an explicit profile is left alone', () async {
+      await connect();
+      ros.advertise<StringMsg>('/scan_echo',
+          latch: true, qos: QosProfile.sensorData);
+
+      final advertise = bridge.lastOf('advertise')!;
+      final qos = advertise['qos']! as Map;
+      expect(qos['reliability'], 'best_effort');
+      expect(qos['durability'], 'transient_local');
+    });
+
+    test('a second advertise with a different profile warns', () async {
+      await connect();
+      final statuses = <RosStatus>[];
+      ros.status.listen(statuses.add);
+
+      ros.advertise<StringMsg>('/chatter');
+      ros.advertise<StringMsg>('/chatter', qos: QosProfile.transientLocal);
+      await pump();
+
+      // rosbridge fixes a topic's QoS at first registration, so the second
+      // caller silently gets the first profile.
+      expect(statuses.map((s) => s.message).join(),
+          contains('already advertised with a different QoS'));
+    });
+  });
+
+  group('fragments', () {
+    test('interleaved messages are dropped, not spliced', () async {
+      await connect();
+      final seen = <StringMsg>[];
+      ros.subscribe<StringMsg>('/chatter').listen(seen.add);
+      final statuses = <RosStatus>[];
+      ros.status.listen(statuses.add);
+      await pump();
+
+      String frame(String data) => jsonEncode({
+            'op': 'publish',
+            'topic': '/chatter',
+            'msg': {'data': data},
+          });
+
+      // rosbridge labels every fragmented message "0", so two large topics
+      // fragmenting at once interleave under one id. Splicing them produces a
+      // corrupt message; the repeated index is the only signal there is.
+      final a = frame('AAAA');
+      final b = frame('BBBB');
+      void fragment(String body, int index, int total) => bridge.emit(
+          jsonEncode({
+            'op': 'fragment',
+            'id': '0',
+            'num': index,
+            'total': total,
+            'data': body,
+          }));
+
+      final aHalves = [a.substring(0, a.length ~/ 2), a.substring(a.length ~/ 2)];
+      final bHalves = [b.substring(0, b.length ~/ 2), b.substring(b.length ~/ 2)];
+
+      fragment(aHalves[0], 0, 2);
+      fragment(bHalves[0], 0, 2); // second message starts under the same id
+      fragment(bHalves[1], 1, 2);
+      await pump();
+
+      // The complete message is B; A was abandoned mid-flight.
+      expect(seen.map((m) => m.data), ['BBBB']);
+      expect(statuses.map((s) => s.message).join(),
+          contains('same id'));
+    });
+
+    test('a clean fragmented message still reassembles', () async {
+      await connect();
+      final seen = <StringMsg>[];
+      ros.subscribe<StringMsg>('/chatter').listen(seen.add);
+      await pump();
+
+      final whole = jsonEncode({
+        'op': 'publish',
+        'topic': '/chatter',
+        'msg': {'data': 'hello fragmented world'},
+      });
+      const parts = 4;
+      final size = (whole.length / parts).ceil();
+      for (var i = 0; i < parts; i++) {
+        final start = i * size;
+        final end = start + size > whole.length ? whole.length : start + size;
+        bridge.emit(jsonEncode({
+          'op': 'fragment',
+          'id': '0',
+          'num': i,
+          'total': parts,
+          'data': whole.substring(start, end),
+        }));
+      }
+      await pump();
+
+      expect(seen.single.data, 'hello fragmented world');
+    });
+  });
+
   group('encodings', () {
     test('CBOR uint8[] decodes without a per-element copy', () async {
       await connect();
@@ -920,3 +1109,6 @@ final class _Goal {
 final class _Unregistered {}
 
 Map<String, Object?> _stringToJson(StringMsg m) => m.toJson();
+
+/// The client's pending outbox, for asserting what survives an outage.
+List<Map<String, Object?>> _outboxOf(Ros2Client client) => client.debugOutbox;

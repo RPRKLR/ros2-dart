@@ -187,8 +187,19 @@ final class Ros2Client {
   /// Commands queued while disconnected, replayed on reconnect.
   final List<Map<String, Object?>> _outbox = [];
 
+  /// Commands buffered while offline, for tests that assert what survives an
+  /// outage and in what order.
+  @visibleForTesting
+  List<Map<String, Object?>> get debugOutbox => List.unmodifiable(_outbox);
+
   /// Maximum number of commands buffered while offline.
   static const int maxOutbox = 256;
+
+  /// Set once, so an interleaved fragment stream warns rather than spams.
+  bool _warnedFragmentCollision = false;
+
+  /// Set once per outage, so a full buffer warns rather than spams.
+  bool _outboxOverflowed = false;
 
   /// Upper bound on a single message's fragment count, to reject nonsense
   /// before allocating.
@@ -471,6 +482,13 @@ final class Ros2Client {
     MessageCodec<T>? codec,
   }) {
     final resolved = codec ?? MessageRegistry.of<T>();
+    // rosbridge's `latch` flag is documented as "ignored if qos is provided",
+    // and this client always provides qos -- so the flag alone has never done
+    // anything. Latching in ROS 2 *is* transient-local durability, so express
+    // it there. An explicitly transient-local profile is left alone.
+    final effectiveQos = latch && qos.durability == Durability.volatile
+        ? qos.copyWith(durability: Durability.transientLocal)
+        : qos;
     final existing = _advertised[topic];
     if (existing == null) {
       final command = <String, Object?>{
@@ -478,15 +496,27 @@ final class Ros2Client {
         'id': _nextId('advertise'),
         'topic': topic,
         'type': resolved.rosType,
-        'qos': qos.toWire(),
+        'qos': effectiveQos.toWire(),
         if (latch) 'latch': true,
       };
       _advertised[topic] = _AdvertisedTopic(command);
       _send(command);
     } else {
       existing.refCount++;
+      // The bridge only ever saw the first advertise for this topic, and
+      // PublisherManager fixes the QoS at first registration. A second caller
+      // asking for something different gets the original, silently.
+      final first = existing.command['qos'];
+      if (first != null && '$first' != '${effectiveQos.toWire()}') {
+        _emitStatus(RosStatus(
+            StatusLevel.warning,
+            'Topic "$topic" is already advertised with a different QoS '
+            'profile; rosbridge fixes it at first registration, so this '
+            'publisher will use the original.'));
+      }
     }
-    return RosPublisher<T>._(this, topic, resolved, qos, latch, perishable);
+    return RosPublisher<T>._(
+        this, topic, resolved, effectiveQos, latch, perishable);
   }
 
   /// One-shot publish to a topic without holding a publisher.
@@ -495,6 +525,20 @@ final class Ros2Client {
   /// prefer [advertise] for anything periodic.
   void publishOnce<T>(String topic, T message,
       {QosProfile qos = QosProfile.default_, MessageCodec<T>? codec}) {
+    // Offline, advertise and unadvertise are dropped by the outbox -- they are
+    // rebuilt from live state on reconnect instead -- while the publish is
+    // queued. The replay would then be a publish to a topic this client never
+    // advertised, arriving after the matching unadvertise had already been
+    // forgotten. Dropping it is the honest outcome, and it is said out loud.
+    if (!isConnected) {
+      _emitStatus(RosStatus(
+          StatusLevel.warning,
+          'publishOnce to "$topic" was discarded: the client is offline, and '
+          'a one-shot publish cannot be replayed without its advertisement. '
+          'Hold a publisher from advertise() if the message must survive a '
+          'reconnect.'));
+      return;
+    }
     final publisher = advertise<T>(topic, qos: qos, codec: codec);
     publisher.publish(message);
     publisher.close();
@@ -667,10 +711,26 @@ final class Ros2Client {
 
   void _enqueue(Map<String, Object?> command) {
     if (_replayedOps.contains(command['op'])) return;
-    if (_outbox.length < maxOutbox) _outbox.add(command);
+    // Drop the oldest, not the newest. Keeping the first 256 commands of an
+    // outage and discarding everything after it is backwards: the newest
+    // command is the one that reflects what the operator wants now, and a stop
+    // issued during the outage is exactly the one that must survive.
+    if (_outbox.length >= maxOutbox) {
+      _outbox.removeAt(0);
+      if (!_outboxOverflowed) {
+        _outboxOverflowed = true;
+        _emitStatus(const RosStatus(
+            StatusLevel.warning,
+            'Outbox full while offline; dropping the oldest buffered '
+            'commands. Publishers of perishable data (velocities, joystick '
+            'input) should advertise with perishable: true.'));
+      }
+    }
+    _outbox.add(command);
   }
 
   void _flushOutbox() {
+    _outboxOverflowed = false;
     final pending = List<Map<String, Object?>>.from(_outbox);
     _outbox.clear();
     for (final command in pending) {
@@ -934,7 +994,16 @@ final class Ros2Client {
       buffer = _FragmentBuffer(total);
       _fragments[id] = buffer;
     }
-    buffer.add(num, data);
+    if (buffer.add(num, data) && !_warnedFragmentCollision) {
+      _warnedFragmentCollision = true;
+      _emitStatus(const RosStatus(
+          StatusLevel.warning,
+          'Fragments from two messages arrived under the same id. rosbridge '
+          'labels every fragmented message "0", so concurrent fragmented '
+          'topics cannot be told apart; the partial message was discarded '
+          'rather than spliced. Raise max_message_size on the bridge, or '
+          'subscribe to fewer large topics at once.'));
+    }
     if (!buffer.isComplete) return;
 
     _fragments.remove(id);
@@ -1018,10 +1087,26 @@ final class _FragmentBuffer {
   final List<String?> _parts;
   int _received = 0;
 
-  void add(int index, String data) {
-    if (index < 0 || index >= total || _parts[index] != null) return;
+  /// Adds a fragment, reporting whether it collided with one already held.
+  ///
+  /// rosbridge gives *every* fragmented message the id `"0"`:
+  /// `fragmentation_seed` is a class attribute, the increment writes an
+  /// instance attribute, and `protocol.py` builds a fresh `Fragmentation` per
+  /// send — so the counter is read as 0 forever. Two topics fragmenting
+  /// concurrently therefore interleave under one id. A repeated index is the
+  /// signal, and the only safe reading of it is that a new message has begun:
+  /// splicing the two together yields a corrupt reassembly, which is worse
+  /// than losing one message.
+  bool add(int index, String data) {
+    if (index < 0 || index >= total) return false;
+    final collided = _parts[index] != null;
+    if (collided) {
+      _parts.fillRange(0, total, null);
+      _received = 0;
+    }
     _parts[index] = data;
     _received++;
+    return collided;
   }
 
   bool get isComplete => _received == total;
