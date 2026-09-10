@@ -461,6 +461,48 @@ Flutter apps should reach for `TfFrameBuilder` in `package:ros2_flutter`
 instead of driving a `TfListener` by hand: it shares one listener across the
 whole widget tree and rebuilds only when the transform actually changes.
 
+## TLS
+
+A certificate signed by a public CA needs nothing special — just use `wss://`:
+
+```dart
+final ros = Ros2Client(Uri.parse('wss://robot.example.com:9090'));
+```
+
+A **self-signed** certificate, which is what almost every robot on a private
+network has, fails with `CERTIFICATE_VERIFY_FAILED`. Trust that certificate
+rather than switching verification off — pinning it by file means a different
+certificate on the same address is still rejected, which is the point of using
+TLS on a network you do not fully control:
+
+```dart
+final context = SecurityContext(withTrustedRoots: true)
+  ..setTrustedCertificates('robot_cert.pem');
+final client = HttpClient(context: context);
+
+final ros = Ros2Client(
+  Uri.parse('wss://robot.local:9090'),
+  transportFactory: (uri) => WebSocketTransport(
+    uri,
+    channelFactory: (u, {protocols}) =>
+        IOWebSocketChannel.connect(u, protocols: protocols,
+            customClient: client),
+  ),
+);
+```
+
+`example/secure_connection.dart` is a runnable version, verified against
+`rosbridge_suite` launched with `ssl:=true`. On the web the browser owns TLS
+and this hook does not apply — a self-signed certificate has to be accepted in
+the browser itself.
+
+On the robot:
+
+```bash
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
+  ssl:=true certfile:=cert.pem keyfile:=key.pem
+```
+
 ## Backpressure
 
 A robot publishes on its own schedule. When a subscription's consumer falls

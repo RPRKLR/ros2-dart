@@ -443,9 +443,16 @@ largest single chunk of work left.
 
 ## v1.0 — Production readiness
 
-- Security: TLS (`wss://`), token auth via the rosbridge `auth` opcode,
-  documented reverse-proxy setup. `wss://` should already work through
-  `web_socket_channel`, but is untested against a TLS bridge.
+- ✅ TLS (`wss://`), verified against `rosbridge_suite` launched with
+  `ssl:=true`. A CA-signed certificate needs nothing. A **self-signed** one —
+  what almost every robot on a private network has — fails with
+  `CERTIFICATE_VERIFY_FAILED`, and the fix is to pin it through a
+  `SecurityContext` supplied via the existing `channelFactory` hook, rather
+  than to disable verification. `example/secure_connection.dart` is runnable
+  and both paths were exercised. No new API was needed; the gap was that
+  nothing said so.
+- Token auth via the rosbridge `auth` opcode, and a documented reverse-proxy
+  setup, are still owed.
 - Web support verified *at runtime* in a browser. Compile-time is done, under
   both dart2js and WASM.
 - Reconnect/offline semantics documented with a state diagram
