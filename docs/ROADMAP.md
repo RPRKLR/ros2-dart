@@ -219,13 +219,16 @@ that jump on `/clock` — is unverified.
 
 ## v0.4 — Performance and scale
 
+- ✅ A published benchmark suite (`benchmark/wire_benchmark.dart`), because
+  performance claims without numbers are worthless — and this one turned out
+  to be backwards. See "Large messages, verified against a real bridge".
 - Move decode of large messages to an isolate; benchmark the crossover point
-  where the isolate hop costs more than it saves
+  where the isolate hop costs more than it saves. Now worth re-scoping: a
+  1080p CBOR frame decodes in 13 ms without touching a pixel, so the isolate
+  hop may cost more than it saves for everything but JSON base64.
 - `PointCloud2` field-accessor API that reads directly from the byte buffer
   instead of materialising Dart objects
 - Backpressure: drop-oldest and conflate strategies per subscription
-- A published benchmark suite (messages/sec and MB/sec by encoding), because
-  performance claims without numbers are worthless
 - Optional per-message-deflate negotiation
 
 ## v0.5 — Foxglove transport
@@ -312,12 +315,60 @@ glob.
 
 ## Still owed
 
-- Test on a robot with real sensor topics: `sensor_msgs/Image` CBOR framing,
-  point clouds, and fragmentation on genuinely large messages are all still
-  unexercised against real data.
-- Confirm whether a real bridge emits bare `Infinity` in JSON (the defence is
-  in place either way).
+- Fragmentation on genuinely large messages is still unexercised. The
+  `fragment_size` path has unit tests but has never run against a bridge
+  configured to fragment.
 - Web/WASM verification in CI.
+
+## Large messages, verified against a real bridge ✅
+
+Done 2026-09-10. `example/real_sensor_check.dart` subscribes to a 640x480
+`sensor_msgs/Image`, a 1080-beam `LaserScan` and a 20k-point `PointCloud2`
+published from a real ROS node through rosbridge 2.0.7, and checks every byte
+against the pattern the publisher wrote. 20/20 checks pass. Images and point
+clouds arrive as `_Uint8ArrayView` — a view over the frame, never copied.
+
+**Two questions this closed.**
+
+*Does a real bridge emit bare `Infinity` in JSON?* No.
+`message_conversion.py` says it outright: "JSON does not support Inf and NaN.
+They are mapped to None and encoded as null." So over JSON an out-of-range
+beam and an invalid one both arrive as `NaN` and cannot be told apart. The
+`Infinity`/`NaN` literal repair stays — other bridges and forks are not bound
+by this — but it is not what handles stock rosbridge. CBOR preserves both
+exactly, which makes it a correctness choice for scans, not only a fast one.
+
+*Was the CBOR fast path actually fast?* No — it was **five times slower than
+JSON**, the exact opposite of the claim this package was built on. rosbridge
+sends `uint8[]` as a plain CBOR byte string, not a tagged array
+(`cbor_conversion.py` writes `bytes(val)` for `sequence<uint8>`), and
+`cborDecode(...).toObject()` turns a byte string into a `List<int>` of boxed
+integers, which normalisation then boxed again. A 1080p frame cost six million
+allocations before `Field.asBytes` had started.
+
+The frame is now walked as a `CborValue` tree, so byte strings stay
+`Uint8List` and typed arrays stay `TypedData`, in one pass instead of two. The
+last copy went when it turned out the cbor package returns a `Uint8Buffer` —
+a `List<int>` that is *not* a `TypedData`, so `Uint8List.fromList` on it copied
+element by element. It does expose its backing store, so a view costs nothing.
+
+| Message | JSON | CBOR before | CBOR after |
+|---|---|---|---|
+| 640x480 rgb8 | 62 msg/s | 13 msg/s | **160 msg/s** |
+| 1920x1080 rgb8 | 20 msg/s | 6 msg/s | **77 msg/s** |
+| 64k-point cloud | 88 msg/s | 19 msg/s | **240 msg/s** |
+| 1080-beam scan | 8464 msg/s | — | **28395 msg/s** |
+
+**Why no test caught it.** The one CBOR test built its payload as
+`CborBytes(pixels, tags: [CborTag.uint8Array])` — a *tagged* array, which is
+a wire form rosbridge never sends. The tagged path always worked; the untagged
+one, which is the only one that occurs in practice, was never exercised.
+`test/wire_codec_test.dart` now pins the shapes `cbor_conversion.py` actually
+produces, and asserts the decoded type rather than only the values.
+
+A related trap: `CborFloat32LittleEndianArray(bytes)` does not attach its own
+tag, so building test data that way silently produces an untagged byte string.
+Tags have to be passed explicitly.
 
 ## Version compatibility to document
 

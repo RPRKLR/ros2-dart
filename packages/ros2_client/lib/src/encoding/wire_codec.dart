@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cbor/cbor.dart';
+import 'package:typed_data/typed_data.dart';
 
 /// Decodes rosbridge frames off the wire into plain Dart structures.
 ///
@@ -15,12 +16,77 @@ abstract final class WireCodec {
   static Map<String, Object?> decode(Object frame) {
     return switch (frame) {
       String() => _asStringMap(decodeJson(frame)),
-      Uint8List() => _asStringMap(cborDecode(frame).toObject()),
-      List<int>() =>
-        _asStringMap(cborDecode(Uint8List.fromList(frame)).toObject()),
+      Uint8List() => _decodeCbor(frame),
+      List<int>() => _decodeCbor(Uint8List.fromList(frame)),
       _ => throw FormatException('Unsupported frame type ${frame.runtimeType}'),
     };
   }
+
+  /// Decodes a CBOR frame by walking the `CborValue` tree directly.
+  ///
+  /// Deliberately not `cborDecode(frame).toObject()`. A CBOR byte string --
+  /// which is how rosbridge sends *every* `uint8[]`, so every camera image and
+  /// every point cloud -- comes back from `toObject()` as a `List<int>` of
+  /// boxed integers, and normalising that into a `List<Object?>` boxes them
+  /// again. For a 1080p frame that is six million allocations before
+  /// `Field.asBytes` has even started, and it made CBOR roughly five times
+  /// *slower* than the base64 JSON path it exists to beat.
+  ///
+  /// Walking the tree keeps byte strings as `Uint8List` and typed arrays as
+  /// their `TypedData` form, and does it in one pass instead of two.
+  static Map<String, Object?> _decodeCbor(Uint8List frame) {
+    final decoded = _fromCbor(cborDecode(frame));
+    if (decoded is! Map<String, Object?>) {
+      throw FormatException(
+          'Expected a CBOR map, got ${decoded.runtimeType}');
+    }
+    return decoded;
+  }
+
+  static Object? _fromCbor(CborValue value) {
+    // Order matters: CborTypedArray and CborBigInt both extend CborBytes.
+    if (value is CborTypedArray) return value.toObject();
+    if (value is CborBigInt) return value.toObject();
+    if (value is CborBytes) return _bytesOf(value.bytes);
+    if (value is CborMap) {
+      final out = <String, Object?>{};
+      for (final entry in value.entries) {
+        out[_keyOf(entry.key)] = _fromCbor(entry.value);
+      }
+      return out;
+    }
+    if (value is CborList) {
+      final out = List<Object?>.filled(value.length, null, growable: false);
+      for (var i = 0; i < value.length; i++) {
+        out[i] = _fromCbor(value[i]);
+      }
+      return out;
+    }
+    if (value is CborString) return value.toString();
+    if (value is CborInt) return value.toInt();
+    if (value is CborFloat) return value.value;
+    if (value is CborBool) return value.value;
+    if (value is CborNull || value is CborUndefined) return null;
+    // Tags this client does not model (dates, URIs) still decode correctly.
+    return normalize(value.toObject());
+  }
+
+  /// The payload of a CBOR byte string as a `Uint8List`, without copying it.
+  ///
+  /// The cbor package hands back a `Uint8Buffer` from `package:typed_data`,
+  /// which is a `List<int>` but *not* a `TypedData`, so `Uint8List.fromList`
+  /// on it copies element by element — a megabyte at a time for camera frames.
+  /// It does expose its backing store, so a view costs nothing. The buffer may
+  /// be longer than the logical length, hence the explicit length.
+  static Uint8List _bytesOf(List<int> bytes) => switch (bytes) {
+        final Uint8List list => list,
+        final Uint8Buffer buffer =>
+          Uint8List.view(buffer.buffer, buffer.offsetInBytes, buffer.length),
+        _ => Uint8List.fromList(bytes),
+      };
+
+  static String _keyOf(CborValue key) =>
+      key is CborString ? key.toString() : '${_fromCbor(key)}';
 
   /// Decodes a JSON text frame, tolerating the non-standard numeric literals
   /// some bridges emit.

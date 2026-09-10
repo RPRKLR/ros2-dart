@@ -358,7 +358,7 @@ void main() {
   });
 
   group('encodings', () {
-    test('CBOR typed arrays decode without a per-element copy', () async {
+    test('CBOR uint8[] decodes without a per-element copy', () async {
       await connect();
       final images = <RosImage>[];
       ros
@@ -376,13 +376,16 @@ void main() {
           'width': 1,
           'encoding': 'rgb8',
           'step': 3,
-          'data': CborBytes(pixels, tags: [CborTag.uint8Array]),
+          // Untagged, which is what rosbridge sends: cbor_conversion.py
+          // writes `bytes(val)` for sequence<uint8>, not a tagged array.
+          'data': CborBytes(pixels),
         },
       })));
       await pump();
 
       expect(images, hasLength(1));
       expect(images.single.data, pixels);
+      expect(images.single.data, isA<Uint8List>());
       expect(images.single.width, 1);
       expect(bridge.lastOf('subscribe')!['compression'], 'cbor');
     });

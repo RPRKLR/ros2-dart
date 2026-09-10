@@ -86,6 +86,32 @@ ros.subscribe<LaserScan>('/scan',
 
 Typed arrays then decode straight into `Uint8List` / `Float32List`.
 
+## Performance
+
+`benchmark/wire_benchmark.dart` measures decode throughput on realistically
+sized messages. Dart VM, JIT, one core:
+
+| Message | JSON | CBOR | Wire size |
+|---|---|---|---|
+| 640x480 rgb8 image | 62 msg/s | **160 msg/s** | 1200 KB -> 900 KB |
+| 1920x1080 rgb8 image | 20 msg/s | **77 msg/s** | 8100 KB -> 6075 KB |
+| 1080-beam LaserScan | 8464 msg/s | **28395 msg/s** | 17 KB -> 4 KB |
+| 64k-point cloud | 88 msg/s | **240 msg/s** | 2731 KB -> 2048 KB |
+
+Run it yourself with `dart run benchmark/wire_benchmark.dart`.
+
+The gap is entirely about avoiding copies. A CBOR byte string is handed to you
+as a `Uint8List` view over the frame the socket delivered — decoding a 1080p
+image touches no pixel — and an RFC 8746 typed array becomes a `Float32List`
+the same way. Getting there took reading the frame as a `CborValue` tree rather
+than calling `toObject()`, which turns a byte string into boxed integers; that
+one difference was making CBOR *five times slower* than the base64 JSON path it
+is supposed to beat.
+
+Verify it against your own robot with `example/real_sensor_check.dart`, which
+checks that a real bridge's images and point clouds arrive byte-exact and
+uncopied.
+
 ## Features
 
 ### Topics
