@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0 (unreleased)
+
+Requires `ros2_client` 0.2.0: the regenerated code uses the key-aware field
+decoders added there, so absent fields take the defaults their definitions
+declare.
+
+Regenerated with the fixed emitter. Fixed-size arrays now default to their
+declared length — `float64[36] covariance` was `Float64List(0)`, and rosbridge
+asserts the exact length and drops the publish, so every partly-filled message
+containing one failed. `UUID.uuid` was zero-length rather than 16 bytes, which
+every action goal uses.
+
+
 ## 0.1.0
 
 Initial release.

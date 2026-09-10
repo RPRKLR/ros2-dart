@@ -30,10 +30,37 @@ Initial release.
   graph-wide queries actually are
 - `std_msgs`, `geometry_msgs`, `sensor_msgs` and `nav_msgs` core types
 
-## 0.1.1 (unreleased)
+## 0.2.0 (unreleased)
 
-Fixes from audits of the tf2 and message layers, neither of which had been
-reviewed before. The core maths came out clean — Hamilton products,
+A minor bump rather than a patch, because pub reads `^0.1.0` as
+`>=0.1.0 <0.2.0`: shipping these as 0.1.1 would hand them to every existing
+user automatically, and several change behaviour that correct-looking code
+depends on. They are all bug fixes — the old behaviour was wrong — but wrong
+in ways a caller may have built around.
+
+**Behaviour that changes**
+
+* A scalar float sent as `null` now decodes to NaN instead of `0.0`. Code like
+  `if (battery.percentage < 0.2)` flips, because every NaN comparison is false.
+  That is the correct reading — `null` on the wire means "no measurement" — but
+  it is a change.
+* `Field.asList` throws on a corrupt element instead of dropping it. A message
+  that used to decode short now fails, and the client reports it on `status`.
+* `RosTopicBuilder` defaults to `Backpressure.latest`, so a widget that was
+  accumulating every message now sees only the newest. Pass
+  `Backpressure.buffer` to keep the old behaviour.
+* The teleop widgets advertise `perishable: true`, so motion commands issued
+  while offline are dropped rather than replayed on reconnect.
+* An absent nested message decodes to its declared defaults rather than all
+  zeros, so an absent `Quaternion` is now the identity.
+* A cycle in the tf tree throws from `lookupOrThrow` instead of returning an
+  answer derived through an arbitrary edge.
+* `set_level` is no longer sent on connect; rosbridge has never implemented it.
+
+**Fixes**
+
+Audits of the tf2 and message layers, neither of which had been reviewed
+before. The core maths came out clean — Hamilton products,
 `lookupTransform` composition order and `toMatrix4` all verified to ~1e-16
 against an independent derivation — but the edges around it did not.
 
