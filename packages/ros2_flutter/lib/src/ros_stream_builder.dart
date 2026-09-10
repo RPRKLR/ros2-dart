@@ -25,6 +25,7 @@ class RosTopicBuilder<T> extends StatefulWidget {
     required this.builder,
     this.qos = QosProfile.default_,
     this.compression,
+    this.backpressure = Backpressure.latest,
     this.throttleRate,
     this.initialValue,
     this.onError,
@@ -38,6 +39,14 @@ class RosTopicBuilder<T> extends StatefulWidget {
 
   final QosProfile qos;
   final Compression? compression;
+
+  /// What to do with messages that arrive faster than the widget rebuilds.
+  ///
+  /// Defaults to [Backpressure.latest], because a widget draws the newest
+  /// value and nothing else: decoding the frames it will never show is pure
+  /// waste. Pass [Backpressure.buffer] if you are accumulating rather than
+  /// displaying — a plot, a log, a counter.
+  final Backpressure backpressure;
 
   /// Server-side rate limit in milliseconds between messages.
   ///
@@ -74,6 +83,7 @@ class _RosTopicBuilderState<T> extends State<RosTopicBuilder<T>> {
     if (oldWidget.topic != widget.topic ||
         oldWidget.qos != widget.qos ||
         oldWidget.compression != widget.compression ||
+        oldWidget.backpressure != widget.backpressure ||
         oldWidget.throttleRate != widget.throttleRate) {
       _resubscribe();
     }
@@ -87,6 +97,7 @@ class _RosTopicBuilderState<T> extends State<RosTopicBuilder<T>> {
         qos: widget.qos,
         compression: widget.compression,
         throttleRate: widget.throttleRate,
+        backpressure: widget.backpressure,
       );
     });
   }

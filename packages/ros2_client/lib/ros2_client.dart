@@ -40,6 +40,7 @@ export 'src/messages/service.dart'
     show ServiceCallException, ServiceCodec, ServiceRegistry;
 export 'src/messages/std_msgs.dart';
 export 'src/protocol/opcodes.dart' show Compression, StatusLevel;
+export 'src/protocol/backpressure.dart' show Backpressure;
 export 'src/protocol/qos.dart'
     show Durability, History, Liveliness, QosProfile, Reliability;
 export 'src/tf/tf_buffer.dart' show TfBuffer, TfException;

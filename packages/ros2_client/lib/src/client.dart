@@ -7,6 +7,7 @@ import 'encoding/wire_codec.dart';
 import 'messages/action.dart';
 import 'messages/message.dart';
 import 'messages/service.dart';
+import 'protocol/backpressure.dart';
 import 'protocol/opcodes.dart';
 import 'protocol/qos.dart';
 import 'transport/transport.dart';
@@ -367,6 +368,7 @@ final class Ros2Client {
     int? throttleRate,
     int? queueLength,
     int? fragmentSize,
+    Backpressure backpressure = Backpressure.buffer,
     MessageCodec<T>? codec,
   }) {
     final resolved = codec ?? MessageRegistry.of<T>();
@@ -379,6 +381,7 @@ final class Ros2Client {
       throttleRate: throttleRate,
       queueLength: queueLength,
       fragmentSize: fragmentSize,
+      backpressure: backpressure,
     );
   }
 
@@ -394,6 +397,7 @@ final class Ros2Client {
     int? throttleRate,
     int? queueLength,
     int? fragmentSize,
+    Backpressure backpressure = Backpressure.buffer,
   }) {
     return _subscribeInternal<JsonMessage>(
       topic,
@@ -404,6 +408,7 @@ final class Ros2Client {
       throttleRate: throttleRate,
       queueLength: queueLength,
       fragmentSize: fragmentSize,
+      backpressure: backpressure,
     );
   }
 
@@ -416,9 +421,13 @@ final class Ros2Client {
     int? throttleRate,
     int? queueLength,
     int? fragmentSize,
+    Backpressure backpressure = Backpressure.buffer,
   }) {
     final effectiveCompression = compression ?? defaultCompression;
     _rejectFragmentedBinary(topic, effectiveCompression, fragmentSize);
+    _rejectUndecodableRaw<T>(topic, effectiveCompression);
+    _warnAboutSharedTopicSettings(
+        topic, effectiveCompression, throttleRate, queueLength);
 
     final id = _nextId('subscribe');
     late final _Listener<T> listener;
@@ -431,6 +440,11 @@ final class Ros2Client {
             .add(listener as _Listener<Object?>);
         _send(listener.subscribeCommand);
       },
+      // A paused subscription is the only signal Dart gives that the consumer
+      // is behind, and it is the one `await for` and StreamBuilder both
+      // produce. While paused, messages are held as raw bodies and never
+      // decoded; on resume only the survivors are.
+      onResume: () => listener.flushBacklog(),
       onCancel: () {
         _listeners[topic]?.remove(listener);
         if (_listeners[topic]?.isEmpty ?? false) _listeners.remove(topic);
@@ -446,6 +460,7 @@ final class Ros2Client {
       topic: topic,
       controller: controller,
       decode: decode,
+      backpressure: backpressure,
       subscribeCommand: {
         'op': Op.subscribe,
         'id': id,
@@ -965,6 +980,81 @@ final class Ros2Client {
     );
   }
 
+  /// Rejects `cbor-raw` for a typed subscription.
+  ///
+  /// `cbor-raw` does not compress the message — it *replaces* it. `subscribe.py`
+  /// substitutes `msg` with `{secs, nsecs, bytes}`, where `bytes` is the raw
+  /// CDR serialisation. This client has no CDR decoder (that arrives with the
+  /// Foxglove transport), so a generated decoder finds none of its fields and
+  /// `Field.as*` returns type defaults: a steady stream of all-zero messages,
+  /// forever, with no error anywhere.
+  ///
+  /// [subscribeJson] can still ask for it and read `bytes` directly.
+  static void _rejectUndecodableRaw<T>(String topic, Compression compression) {
+    if (compression != Compression.cborRaw || T == JsonMessage) return;
+    throw ArgumentError.value(
+      'cbor-raw',
+      'compression',
+      'Compression.cborRaw replaces the message body with a raw CDR blob, '
+          'which this client cannot decode into $T. Every field of "$topic" '
+          'would silently read back as its type default. Use '
+          'Compression.cbor for a typed subscription, or subscribeJson to '
+          'read the raw bytes yourself.',
+    );
+  }
+
+  /// Warns when a subscription silently changes what other listeners get.
+  ///
+  /// rosbridge merges every client's options for a topic rather than honouring
+  /// them per subscription: `throttle_rate` and `queue_length` become the
+  /// `min()` across all listeners, and compression becomes the maximum, with
+  /// `cbor-raw` beating `cbor` beating `png`. So a second, unthrottled
+  /// subscriber turns throttling off for the widget that asked for it, and one
+  /// listener asking for `cbor-raw` hands every other listener on that topic an
+  /// undecodable blob.
+  void _warnAboutSharedTopicSettings(String topic, Compression compression,
+      int? throttleRate, int? queueLength) {
+    final existing = _listeners[topic];
+    if (existing == null || existing.isEmpty) return;
+
+    for (final listener in existing) {
+      final command = listener.subscribeCommand;
+      if (command['compression'] != compression.wireName) {
+        _emitStatus(RosStatus(
+            StatusLevel.warning,
+            'Topic "$topic" already has a listener using '
+            '${command['compression']}; rosbridge applies one compression per '
+            'topic, so both listeners will receive '
+            '${_strongerCompression(compression.wireName, '${command['compression']}')}.'));
+        break;
+      }
+    }
+
+    void checkMin(String field, int? requested) {
+      if (requested == null) return;
+      for (final listener in existing) {
+        final other = listener.subscribeCommand[field] as int? ?? 0;
+        if (other < requested) {
+          _emitStatus(RosStatus(
+              StatusLevel.warning,
+              'Topic "$topic" already has a listener with $field $other; '
+              'rosbridge takes the minimum across listeners, so the '
+              'requested $requested will not apply.'));
+          return;
+        }
+      }
+    }
+
+    checkMin('throttle_rate', throttleRate);
+    checkMin('queue_length', queueLength);
+  }
+
+  /// The compression rosbridge would settle on for two listeners.
+  static String _strongerCompression(String a, String b) {
+    const order = ['none', 'png', 'cbor', 'cbor-raw'];
+    return order.indexOf(a) >= order.indexOf(b) ? a : b;
+  }
+
   /// Reassembles a message split by the bridge's `fragment_size`.
   void _handleFragment(Map<String, Object?> message) {
     final id = message['id'] as String?;
@@ -1036,6 +1126,7 @@ final class _Listener<T> {
     required this.controller,
     required this.decode,
     required this.subscribeCommand,
+    this.backpressure = Backpressure.buffer,
   });
 
   final String id;
@@ -1043,9 +1134,50 @@ final class _Listener<T> {
   final StreamController<T> controller;
   final T Function(Map<String, Object?>) decode;
   final Map<String, Object?> subscribeCommand;
+  final Backpressure backpressure;
+
+  /// Raw bodies received while the consumer was paused, still undecoded.
+  final List<Map<String, Object?>> _backlog = [];
+
+  /// Messages discarded since the last delivery, for diagnostics.
+  int droppedCount = 0;
 
   void deliver(Map<String, Object?> body, void Function(RosStatus) onError) {
     if (controller.isClosed) return;
+
+    // `isPaused` is true whenever the consumer has not asked for more: an
+    // `await for` body still running, a StreamBuilder between frames, an
+    // explicit pause(). Delivering anyway just grows Dart's own buffer, which
+    // is the thing backpressure exists to bound.
+    if (!backpressure.isBuffered && controller.isPaused) {
+      _backlog.add(body);
+      final limit = backpressure.maxBuffered;
+      while (_backlog.length > limit) {
+        _backlog.removeAt(0);
+        droppedCount++;
+      }
+      return;
+    }
+    _emit(body, onError);
+  }
+
+  /// Delivers whatever survived the pause. Decoding happens here, so messages
+  /// dropped while paused cost nothing beyond the bytes already received.
+  void flushBacklog([void Function(RosStatus)? onError]) {
+    if (_backlog.isEmpty) return;
+    final pending = List<Map<String, Object?>>.of(_backlog);
+    _backlog.clear();
+    for (final body in pending) {
+      if (controller.isClosed || controller.isPaused) {
+        // Paused again mid-flush; keep the rest under the same policy.
+        _backlog.add(body);
+        continue;
+      }
+      _emit(body, onError ?? (_) {});
+    }
+  }
+
+  void _emit(Map<String, Object?> body, void Function(RosStatus) onError) {
     try {
       controller.add(decode(body));
     } catch (e) {

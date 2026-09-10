@@ -459,6 +459,50 @@ Flutter apps should reach for `TfFrameBuilder` in `package:ros2_flutter`
 instead of driving a `TfListener` by hand: it shares one listener across the
 whole widget tree and rebuilds only when the transform actually changes.
 
+## Backpressure
+
+A robot publishes on its own schedule. When a subscription's consumer falls
+behind, Dart buffers the backlog and delivers all of it later — which for
+sensor data is wrong twice over: the app pays to decode messages whose moment
+has passed, then renders them late.
+
+```dart
+ros.subscribe<LaserScan>('/scan',
+    qos: QosProfile.sensorData,
+    backpressure: Backpressure.latest);          // keep only the newest
+
+ros.subscribe<Odometry>('/odom',
+    backpressure: Backpressure.dropOldest(20));  // a bounded tail
+
+ros.subscribe<StringMsg>('/events');             // buffer, the default
+```
+
+The strategy applies **only to undelivered messages**: a consumer that keeps up
+never loses anything, and nothing is dropped while it is idle. The signal is
+the subscription being paused, which is what `await for` and `StreamBuilder`
+both produce.
+
+Messages dropped this way are **never decoded** — they are held as raw bodies
+and discarded before the codec runs. That is where the saving is; conflating
+after decode would already have paid for every frame.
+
+`RosTopicBuilder` in `package:ros2_flutter` defaults to `Backpressure.latest`,
+because a widget draws the newest value and nothing else. Pass
+`Backpressure.buffer` if you are accumulating rather than displaying.
+
+**`Compression.cborRaw` is refused for a typed subscription.** It does not
+compress the message, it replaces it: rosbridge substitutes `msg` with
+`{secs, nsecs, bytes}` holding raw CDR, which this client has no decoder for.
+Every field would read back as its type default, forever, with no error. Use
+`subscribeJson` if you want those bytes.
+
+**rosbridge merges options across every listener on a topic**, rather than
+honouring them per subscription: `throttle_rate` and `queue_length` become the
+`min()`, and compression the strongest requested. So a second, unthrottled
+subscriber turns throttling off for the widget that asked for it. The client
+warns on `status` when a new subscription would do that, since the effect is
+otherwise invisible.
+
 ## Buffering, latching and other things that only look like they work
 
 **Publishes are buffered across a reconnect — unless you say they perish.**

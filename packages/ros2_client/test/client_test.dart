@@ -654,6 +654,185 @@ void main() {
     });
   });
 
+  group('options rosbridge merges across listeners', () {
+    test('refuses cbor-raw for a typed subscription', () async {
+      await connect();
+
+      // cbor-raw does not compress the message, it replaces it: subscribe.py
+      // substitutes msg with {secs, nsecs, bytes} holding raw CDR. With no CDR
+      // decoder every field reads back as its type default, forever, silently.
+      expect(
+        () => ros.subscribe<LaserScan>('/scan',
+            compression: Compression.cborRaw),
+        throwsA(isA<ArgumentError>().having((e) => e.message, 'message',
+            contains('raw CDR blob'))),
+      );
+
+      // The untyped API can still ask for it and read the bytes itself.
+      expect(
+          () => ros.subscribeJson('/scan', compression: Compression.cborRaw),
+          returnsNormally);
+    });
+
+    test('warns when a second listener changes the topic compression',
+        () async {
+      await connect();
+      final statuses = <RosStatus>[];
+      ros.status.listen(statuses.add);
+
+      ros.subscribe<LaserScan>('/scan', compression: Compression.none).listen((_) {});
+      ros.subscribe<LaserScan>('/scan', compression: Compression.cbor).listen((_) {});
+      await pump();
+
+      // rosbridge applies one compression per topic, taking the strongest.
+      expect(statuses.map((s) => s.message).join(),
+          contains('one compression per topic'));
+    });
+
+    test('warns when a second listener disables throttling', () async {
+      await connect();
+      final statuses = <RosStatus>[];
+      ros.status.listen(statuses.add);
+
+      // The unthrottled listener wins, because rosbridge takes the min.
+      ros.subscribe<LaserScan>('/scan').listen((_) {});
+      ros.subscribe<LaserScan>('/scan', throttleRate: 200).listen((_) {});
+      await pump();
+
+      expect(statuses.map((s) => s.message).join(),
+          contains('takes the minimum across listeners'));
+    });
+
+    test('says nothing when listeners agree', () async {
+      await connect();
+      final statuses = <RosStatus>[];
+      ros.status.listen(statuses.add);
+
+      ros.subscribe<LaserScan>('/scan', throttleRate: 100).listen((_) {});
+      ros.subscribe<LaserScan>('/scan', throttleRate: 100).listen((_) {});
+      await pump();
+
+      expect(statuses, isEmpty);
+    });
+  });
+
+  group('backpressure', () {
+    /// Publishes [count] messages on /scan with increasing angle_min, so each
+    /// one is identifiable.
+    void publishScans(FakeBridge bridge, int count, {int from = 0}) {
+      for (var i = from; i < from + count; i++) {
+        bridge.publish('/scan', {'angle_min': i.toDouble()});
+      }
+    }
+
+    test('buffer delivers every message, in order', () async {
+      await connect();
+      final seen = <double>[];
+      final sub = ros
+          .subscribe<LaserScan>('/scan')
+          .listen((s) => seen.add(s.angleMin));
+      await pump();
+
+      sub.pause();
+      publishScans(bridge, 5);
+      await pump();
+      sub.resume();
+      await pump();
+
+      expect(seen, [0, 1, 2, 3, 4]);
+      await sub.cancel();
+    });
+
+    test('latest keeps only the newest message across a pause', () async {
+      await connect();
+      final seen = <double>[];
+      final sub = ros
+          .subscribe<LaserScan>('/scan', backpressure: Backpressure.latest)
+          .listen((s) => seen.add(s.angleMin));
+      await pump();
+
+      // A consumer that is behind: the robot keeps publishing regardless.
+      sub.pause();
+      publishScans(bridge, 30);
+      await pump();
+      sub.resume();
+      await pump();
+
+      // Rendering the 29 stale scans would be wrong twice over: the work is
+      // wasted and the result is late.
+      expect(seen, [29]);
+      await sub.cancel();
+    });
+
+    test('dropOldest keeps a bounded tail', () async {
+      await connect();
+      final seen = <double>[];
+      final sub = ros
+          .subscribe<LaserScan>('/scan',
+              backpressure: Backpressure.dropOldest(3))
+          .listen((s) => seen.add(s.angleMin));
+      await pump();
+
+      sub.pause();
+      publishScans(bridge, 10);
+      await pump();
+      sub.resume();
+      await pump();
+
+      expect(seen, [7, 8, 9]);
+      await sub.cancel();
+    });
+
+    test('a consumer that keeps up loses nothing', () async {
+      await connect();
+      final seen = <double>[];
+      final sub = ros
+          .subscribe<LaserScan>('/scan', backpressure: Backpressure.latest)
+          .listen((s) => seen.add(s.angleMin));
+      await pump();
+
+      // Never paused, so the strategy must not engage at all.
+      publishScans(bridge, 5);
+      await pump();
+
+      expect(seen, [0, 1, 2, 3, 4]);
+      await sub.cancel();
+    });
+
+    test('dropped messages are never decoded', () async {
+      await connect();
+      var decoded = 0;
+      final codec = MessageCodec<LaserScan>(
+        rosType: 'sensor_msgs/msg/LaserScan',
+        fromJson: (json) {
+          decoded++;
+          return LaserScan.fromJson(json);
+        },
+        toJson: (m) => m.toJson(),
+      );
+      final sub = ros
+          .subscribe<LaserScan>('/scan',
+              backpressure: Backpressure.latest, codec: codec)
+          .listen((_) {});
+      await pump();
+
+      sub.pause();
+      publishScans(bridge, 50);
+      await pump();
+      sub.resume();
+      await pump();
+
+      // The whole point: conflating after decode would already have paid for
+      // all fifty.
+      expect(decoded, 1);
+      await sub.cancel();
+    });
+
+    test('dropOldest rejects a non-positive bound', () {
+      expect(() => Backpressure.dropOldest(0), throwsArgumentError);
+    });
+  });
+
   group('encodings', () {
     test('CBOR uint8[] decodes without a per-element copy', () async {
       await connect();

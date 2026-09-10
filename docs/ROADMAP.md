@@ -367,15 +367,23 @@ rather than splicing.
 **A second advertise with a different QoS** silently got the first profile,
 because `PublisherManager` fixes it at first registration. Warned now.
 
-### Still open
+### Also closed
 
-These need the bridge configured differently, not client changes, so they are
-documented rather than fixed:
+**`cbor-raw` on a typed subscription is refused.** It does not compress the
+message, it replaces it: `subscribe.py` substitutes `msg` with
+`{secs, nsecs, bytes}` holding raw CDR. With no CDR decoder every field reads
+back as its type default — a steady stream of all-zero messages, forever, with
+no error. Worse, compression is a per-*topic* maximum, so one listener asking
+for it flipped every other listener on that topic too.
 
-- Per-subscription `throttle_rate` and `queue_length` are `min()`-merged across
-  every listener on a topic (`subscribe.py:225-239`), so one unthrottled
-  subscriber disables throttling for all of them. Detectable client-side; not
-  yet warned about.
+**Options merged across listeners now warn.** `subscribe.py:225-239` takes the
+`min()` of `throttle_rate` and `queue_length` across every listener on a topic
+and the strongest compression, rather than honouring them per subscription. So
+a second, unthrottled subscriber silently turned throttling off for the widget
+that asked for it. The client says so on `status`.
+
+### Still open — bridge configuration, not client changes
+
 - `cancel_action_goal` cannot be delivered while a goal runs on a
   default-launched bridge: `send_action_goals_in_new_thread` defaults false and
   `SendGoal.send_goal` busy-waits, parking the client's only queue thread.
@@ -385,22 +393,24 @@ documented rather than fixed:
   `default_call_service_timeout` defaults `0.0`, meaning wait forever. The
   client-side timeout is bookkeeping only. Launch with
   `call_services_in_new_thread:=true`.
-- If any listener on a topic asks for `cbor-raw`, every listener on it gets
-  cbor-raw, and generated decoders then see none of their fields — a steady
-  stream of all-zero messages with no error.
 
 ## v0.4 — Performance and scale
 
 - ✅ A published benchmark suite (`benchmark/wire_benchmark.dart`), because
   performance claims without numbers are worthless — and this one turned out
   to be backwards. See "Large messages, verified against a real bridge".
+- ✅ `PointCloud2` field accessors reading straight from the byte buffer
+  (`PointCloudReader`), with no allocation per point
+- ✅ Backpressure per subscription: `Backpressure.latest` conflates,
+  `Backpressure.dropOldest(n)` bounds, `buffer` is the default. Applied only to
+  *undelivered* messages, keyed off the subscription being paused — the signal
+  `await for` and `StreamBuilder` both produce. Dropped messages are never
+  decoded, which is the whole point: conflating after decode would already have
+  paid for every frame. `RosTopicBuilder` defaults to `latest`.
 - Move decode of large messages to an isolate; benchmark the crossover point
-  where the isolate hop costs more than it saves. Now worth re-scoping: a
-  1080p CBOR frame decodes in 13 ms without touching a pixel, so the isolate
-  hop may cost more than it saves for everything but JSON base64.
-- `PointCloud2` field-accessor API that reads directly from the byte buffer
-  instead of materialising Dart objects
-- Backpressure: drop-oldest and conflate strategies per subscription
+  where the isolate hop costs more than it saves. Now worth re-scoping twice
+  over: a 1080p CBOR frame decodes in 13 ms without touching a pixel, and
+  backpressure removes the decodes that were being wasted anyway.
 - Optional per-message-deflate negotiation
 
 ## v0.5 — Foxglove transport
