@@ -315,9 +315,6 @@ glob.
 
 ## Still owed
 
-- Fragmentation on genuinely large messages is still unexercised. The
-  `fragment_size` path has unit tests but has never run against a bridge
-  configured to fragment.
 - Web/WASM verification in CI.
 
 ## Large messages, verified against a real bridge ✅
@@ -369,6 +366,25 @@ produces, and asserts the decoded type rather than only the values.
 A related trap: `CborFloat32LittleEndianArray(bytes)` does not attach its own
 tag, so building test data that way silently produces an untagged byte string.
 Tags have to be passed explicitly.
+
+### Fragmentation ✅
+
+Also closed 2026-09-10, and it found a third silent failure. Over JSON,
+`fragment_size` works: a 1.2 MB base64 image at 64 KB a fragment is about
+twenty parts and reassembles byte-exact in ~240 ms.
+
+Over CBOR it delivers **nothing**. `Fragmentation.fragment` re-serialises the
+already-encoded payload with `json.dumps`, which refuses it — `reject_bytes is
+on and '...' is bytes` — and the bridge then sends no fragments at all,
+logging the failure only on its own console. The subscription is accepted, so
+from the client there is no error, no warning, and no data: the same shape as
+the v0.1 QoS bug.
+
+Nothing here can fix rosbridge, but the combination is detectable before the
+subscribe goes out, so `subscribe` now throws an `ArgumentError` naming the
+cause. The check resolves `defaultCompression` too — setting CBOR globally and
+adding `fragmentSize` for one topic is the easiest way to hit this by
+accident.
 
 ## Version compatibility to document
 

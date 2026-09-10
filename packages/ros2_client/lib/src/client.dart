@@ -357,6 +357,9 @@ final class Ros2Client {
     int? queueLength,
     int? fragmentSize,
   }) {
+    final effectiveCompression = compression ?? defaultCompression;
+    _rejectFragmentedBinary(topic, effectiveCompression, fragmentSize);
+
     final id = _nextId('subscribe');
     late final _Listener<T> listener;
     late final StreamController<T> controller;
@@ -388,7 +391,7 @@ final class Ros2Client {
         'id': id,
         'topic': topic,
         if (rosType != null) 'type': rosType,
-        'compression': (compression ?? defaultCompression).wireName,
+        'compression': effectiveCompression.wireName,
         if (throttleRate != null) 'throttle_rate': throttleRate,
         if (queueLength != null) 'queue_length': queueLength,
         if (fragmentSize != null) 'fragment_size': fragmentSize,
@@ -776,6 +779,35 @@ final class Ros2Client {
       values is Map<String, Object?> ? values : const {},
       GoalStatus.fromValue(message['status'] as int?),
       message['result'] != false,
+    );
+  }
+
+  /// Rejects `fragment_size` combined with a binary compression.
+  ///
+  /// rosbridge cannot do both. `Fragmentation.fragment` re-serialises the
+  /// already-encoded CBOR payload with `json.dumps`, which refuses it —
+  /// "reject_bytes is on and '...' is bytes" — and the bridge then sends
+  /// *nothing at all*, logging the failure only on its own console. Verified
+  /// against rosbridge 2.0.7: the subscription is accepted and simply never
+  /// delivers a message.
+  ///
+  /// Failing here turns a silent hang into a message that names the cause.
+  static void _rejectFragmentedBinary(
+      String topic, Compression compression, int? fragmentSize) {
+    if (fragmentSize == null) return;
+    if (compression != Compression.cbor &&
+        compression != Compression.cborRaw) {
+      return;
+    }
+    throw ArgumentError.value(
+      fragmentSize,
+      'fragmentSize',
+      'rosbridge cannot fragment ${compression.wireName} messages: it '
+          're-serialises the encoded payload as JSON, fails, and silently '
+          'delivers nothing for "$topic". Use fragmentSize with '
+          'Compression.none, or drop fragmentSize and keep '
+          '${compression.wireName} — a CBOR payload is already far smaller '
+          'than the JSON it replaces.',
     );
   }
 

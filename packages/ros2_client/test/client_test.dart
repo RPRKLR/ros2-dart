@@ -390,6 +390,53 @@ void main() {
       expect(bridge.lastOf('subscribe')!['compression'], 'cbor');
     });
 
+    test('refuses fragment_size with a binary compression', () async {
+      await connect();
+
+      // rosbridge re-serialises the encoded CBOR payload with json.dumps
+      // inside Fragmentation.fragment, fails with "reject_bytes is on", and
+      // then delivers nothing while logging only on its own console. Verified
+      // against rosbridge 2.0.7 -- the subscription is accepted and simply
+      // never produces a message, which is the worst possible failure mode.
+      expect(
+        () => ros.subscribe<RosImage>('/camera/image_raw',
+            compression: Compression.cbor, fragmentSize: 65536),
+        throwsA(isA<ArgumentError>().having(
+            (e) => e.message, 'message', contains('silently delivers'))),
+      );
+      expect(
+        () => ros.subscribe<RosImage>('/camera/image_raw',
+            compression: Compression.cborRaw, fragmentSize: 65536),
+        throwsArgumentError,
+      );
+
+      // The combinations that do work must stay unaffected.
+      expect(
+          () => ros.subscribe<RosImage>('/a',
+              compression: Compression.none, fragmentSize: 65536),
+          returnsNormally);
+      expect(
+          () => ros.subscribe<RosImage>('/b', compression: Compression.cbor),
+          returnsNormally);
+    });
+
+    test('a default binary compression is caught too', () async {
+      // The check has to resolve defaultCompression, not just the argument:
+      // setting cbor globally and adding fragmentSize for one topic is the
+      // easiest way to hit this by accident.
+      final other = Ros2Client(
+        Uri.parse('ws://fake:9090'),
+        transportFactory: (_) => FakeBridge(),
+        reconnectPolicy: ReconnectPolicy.none,
+        defaultCompression: Compression.cbor,
+      );
+      addTearDown(other.close);
+
+      expect(
+          () => other.subscribe<RosImage>('/camera', fragmentSize: 4096),
+          throwsArgumentError);
+    });
+
     test('base64 uint8[] from JSON decodes to the same bytes', () async {
       await connect();
       final images = <CompressedImage>[];

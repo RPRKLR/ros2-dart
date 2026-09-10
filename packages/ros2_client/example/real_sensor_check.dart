@@ -32,6 +32,7 @@ Future<void> main(List<String> args) async {
   await _image(ros, Compression.none);
   await _scan(ros);
   await _cloud(ros);
+  await _fragmentation(ros);
 
   await ros.close();
   stdout.writeln(failures == 0
@@ -104,6 +105,47 @@ Future<void> _scan(Ros2Client ros) async {
   check('only CBOR distinguishes inf from NaN',
       scan.ranges[0].isInfinite && json.ranges[0].isNaN,
       'cbor=${scan.ranges[0]}  json=${json.ranges[0]}');
+}
+
+Future<void> _fragmentation(Ros2Client ros) async {
+  // A 1.2 MB base64 image at 64 KB a fragment is about twenty parts, so this
+  // exercises reassembly properly rather than the two-fragment case.
+  final watch = Stopwatch()..start();
+  var reassembled = false;
+  var exact = false;
+  try {
+    final image = await _first(ros.subscribe<RosImage>('/camera/image_raw',
+        qos: QosProfile.sensorData,
+        compression: Compression.none,
+        fragmentSize: 65536));
+    reassembled = image.data.length == width * height * 3;
+    exact = true;
+    for (var i = 0; i < image.data.length; i++) {
+      if (image.data[i] != (i * 7 + 13) % 256) {
+        exact = false;
+        break;
+      }
+    }
+  } on TimeoutException {
+    reassembled = false;
+  }
+  watch.stop();
+  check('fragmented JSON image reassembles', reassembled,
+      '${watch.elapsedMilliseconds} ms');
+  check('fragmented JSON image is byte-exact', exact);
+
+  // rosbridge cannot fragment CBOR: it re-serialises the encoded payload with
+  // json.dumps, fails with "reject_bytes is on", and delivers nothing while
+  // logging only on its own console. The client refuses the combination so
+  // that shows up as an error instead of a hang.
+  var rejected = false;
+  try {
+    ros.subscribe<RosImage>('/camera/image_raw',
+        compression: Compression.cbor, fragmentSize: 65536);
+  } on ArgumentError {
+    rejected = true;
+  }
+  check('fragmented CBOR is refused rather than hanging', rejected);
 }
 
 Future<void> _cloud(Ros2Client ros) async {

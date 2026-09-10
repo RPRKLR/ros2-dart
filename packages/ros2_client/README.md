@@ -86,6 +86,20 @@ ros.subscribe<LaserScan>('/scan',
 
 Typed arrays then decode straight into `Uint8List` / `Float32List`.
 
+### Fragmentation and CBOR do not mix
+
+`fragment_size` works over JSON — a 1.2 MB image at 64 KB a fragment
+reassembles byte-exact — but rosbridge **cannot** fragment a CBOR message. Its
+`Fragmentation.fragment` re-serialises the already-encoded payload with
+`json.dumps`, which refuses it (`reject_bytes is on and '...' is bytes`), and
+the bridge then delivers *nothing* while logging the failure only on its own
+console. Verified against rosbridge 2.0.7: the subscription is accepted and
+simply never produces a message.
+
+`subscribe` throws an `ArgumentError` for that combination rather than letting
+you wait forever. In practice you rarely want both anyway — a CBOR payload is
+already far smaller than the JSON it replaces.
+
 ## Performance
 
 `benchmark/wire_benchmark.dart` measures decode throughput on realistically
