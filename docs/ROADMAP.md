@@ -407,13 +407,25 @@ that asked for it. The client says so on `status`.
   `await for` and `StreamBuilder` both produce. Dropped messages are never
   decoded, which is the whole point: conflating after decode would already have
   paid for every frame. `RosTopicBuilder` defaults to `latest`.
-- Move decode of large messages to an isolate; benchmark the crossover point
-  where the isolate hop costs more than it saves. Now worth re-scoping twice
-  over: a 1080p CBOR frame decodes in 13 ms without touching a pixel, and
-  backpressure removes the decodes that were being wasted anyway.
-- Optional per-message-deflate negotiation
+- ~~Move decode of large messages to an isolate.~~ **Recommend dropping.** The
+  premise was that decode blocks the UI thread; it no longer does to any degree
+  worth an isolate hop. A 1080p CBOR frame decodes in 13 ms without touching a
+  pixel, and backpressure discards the frames that were being decoded wastefully
+  in the first place. Revisit only if a profile on real hardware says otherwise.
+- Optional per-message-deflate negotiation. Minor: CBOR already cuts the wire
+  size by ~25% against base64 JSON, and deflate on already-compressed image
+  payloads buys little.
 
 ## v0.5 — Foxglove transport
+
+**Worth re-justifying before starting.** The original case was that Foxglove is
+"genuinely faster (C++ server, binary schemas)". That was written when this
+client's CBOR path was five times *slower* than JSON. It now decodes 1080p at
+77 msg/s and a 64k-point cloud at 240 msg/s, and the bottleneck turned out to
+be our decoder rather than the protocol. Foxglove remains where the ecosystem's
+momentum is, and it brings a CDR decoder that `cbor-raw` would also need — but
+the performance argument for it is much weaker than it looked, and this is the
+largest single chunk of work left.
 
 - Implement the Foxglove WebSocket protocol behind the existing
   `RosTransport` interface
@@ -432,8 +444,10 @@ that asked for it. The client says so on `status`.
 ## v1.0 — Production readiness
 
 - Security: TLS (`wss://`), token auth via the rosbridge `auth` opcode,
-  documented reverse-proxy setup
-- Web support verified in CI, including the CBOR path under WASM
+  documented reverse-proxy setup. `wss://` should already work through
+  `web_socket_channel`, but is untested against a TLS bridge.
+- Web support verified *at runtime* in a browser. Compile-time is done, under
+  both dart2js and WASM.
 - Reconnect/offline semantics documented with a state diagram
 - API frozen; semver discipline from here
 - A real reference app published to the stores driving an actual robot
@@ -442,15 +456,29 @@ that asked for it. The client says so on `status`.
 
 ## Before the first publish
 
-1. **Pick and verify a package name.** `ros2_client` and `ros2_flutter` were
-   both free on pub.dev when this was written. Re-check before publishing.
-2. **Replace the `dependency_overrides` block** in `ros2_flutter/pubspec.yaml`
-   with the published `ros2_client` version.
-3. **Set the real repository URL** in both pubspecs (currently `USER`).
-4. **Add `LICENSE`** — BSD-3-Clause matches ROS ecosystem convention.
-5. **Run `dart pub publish --dry-run`** and fix every pub points warning;
-   score is the main discovery signal on pub.dev.
-6. **Publish `ros2_client` first**, then `ros2_flutter`.
+- ✅ Repository URL set in all three pubspecs.
+- ✅ `LICENSE` present (BSD-3-Clause, matching ROS convention).
+- ✅ `dart pub publish --dry-run` on `ros2_client`: **0 warnings**.
+- ✅ Web verified at compile time: the full public surface — CBOR, TF,
+  `PointCloudReader`, introspection, backpressure — compiles under both
+  `dart compile js` and `dart compile wasm`. Nothing in `lib/` imports
+  `dart:io`. Runtime verification in a browser is still owed.
+- [ ] **Re-check the names on pub.dev.** `ros2_client`, `ros2_flutter` and
+      `ros2_msgs_common` were free when this was written. Names and version
+      numbers are permanent once taken.
+- [ ] **Publish `ros2_client` first.** The other two depend on it and cannot go
+      until it exists.
+- [ ] **Then drop the `dependency_overrides`** from `ros2_flutter` and
+      `ros2_msgs_common` and publish those, in that order.
+- [ ] **Dry-run the other two**, which has only been done for `ros2_client`.
+
+## No CI yet
+
+Everything above — 247 tests, the real-bridge harness, the wire benchmark, the
+byte-identical regeneration of `ros2_msgs_common`, the web and WASM compiles —
+runs only when someone runs it. Every serious bug this project has had was
+found by *running* something rather than reading it, which is the argument for
+automating exactly these.
 
 ## Validation against a real bridge ✅
 
