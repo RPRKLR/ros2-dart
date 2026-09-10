@@ -20,6 +20,23 @@ abstract final class DartEmitter {
     'Route': 'RosRoute',
   };
 
+  /// Names generated code imports from `codegen_support.dart`.
+  ///
+  /// A message class that shadows one of these does not merely rename itself
+  /// — it breaks *every other message in the same library*, because their
+  /// decode calls resolve to the message class instead of the helper. A
+  /// `Field.msg` is entirely plausible in a mapping or agriculture package.
+  static const Set<String> supportTypeNames = {
+    'Field',
+    'RosMessage',
+    'MessageCodec',
+    'MessageRegistry',
+    'ServiceCodec',
+    'ServiceRegistry',
+    'ActionCodec',
+    'ActionRegistry',
+  };
+
   /// `dart:core` names a message must never shadow.
   ///
   /// A `zed_msgs/msg/Object` generated as `class Object` shadows
@@ -103,6 +120,9 @@ abstract final class DartEmitter {
     'noSuchMethod',
     'rosType',
     'toJson',
+    // The generated factory owns this name; a constant `FROM_JSON` would
+    // collide with it.
+    'fromJson',
   };
 
   /// The Dart class name for a ROS type name.
@@ -114,7 +134,9 @@ abstract final class DartEmitter {
     final short = rosTypeName.split('/').last.replaceAll('_', '');
     final mapped = reservedTypeNames[short];
     if (mapped != null) return mapped;
-    return dartCoreTypeNames.contains(short) ? 'Ros$short' : short;
+    return dartCoreTypeNames.contains(short) || supportTypeNames.contains(short)
+        ? 'Ros$short'
+        : short;
   }
 
   /// snake_case -> camelCase, avoiding Dart keywords.
@@ -259,12 +281,11 @@ abstract final class DartEmitter {
     if (value.isEmpty) return dartType == 'String' ? "''" : '0';
 
     if (dartType == 'String') {
-      if ((value.startsWith('"') && value.endsWith('"')) ||
-          (value.startsWith("'") && value.endsWith("'"))) {
-        final inner = value.substring(1, value.length - 1);
-        return "'${inner.replaceAll(r'\', r'\\').replaceAll("'", r"\'")}'";
-      }
-      return "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'")}'";
+      final unquoted = ((value.startsWith('"') && value.endsWith('"')) ||
+              (value.startsWith("'") && value.endsWith("'")))
+          ? value.substring(1, value.length - 1)
+          : value;
+      return "'${_escapeString(unquoted)}'";
     }
 
     if (dartType == 'bool') {
@@ -308,6 +329,11 @@ abstract final class DartEmitter {
       if (elements != null && scalar != null) {
         return 'const [${elements.map((e) => literal(e, scalar)).join(', ')}]';
       }
+      // `T[N]` is a fixed-size array: rosbridge asserts the exact length when
+      // it populates the message, so an empty default makes every
+      // partly-filled message fail to publish. Defer to the `??` initialiser,
+      // which can build one of the right size.
+      if (field.arrayKind == ArrayKind.fixed) return null;
       return 'const []';
     }
 
@@ -326,6 +352,17 @@ abstract final class DartEmitter {
     };
   }
 
+  /// Escapes a ROS string for a single-quoted Dart literal.
+  ///
+  /// `$` matters as much as the quote and the backslash: a ROS constant of
+  /// `$1.00 per ${unit}` is legal, and emitted raw it becomes Dart string
+  /// interpolation — which either fails to compile or, when the name happens
+  /// to resolve, silently substitutes the wrong text.
+  static String _escapeString(String value) => value
+      .replaceAll(r'\', r'\\')
+      .replaceAll(r'$', r'\$')
+      .replaceAll("'", r"\'");
+
   /// Splits a `[a, b, c]` array default into its element texts.
   static List<String>? _defaultElements(FieldDef field) {
     final raw = field.defaultValue?.trim();
@@ -340,6 +377,12 @@ abstract final class DartEmitter {
   /// The fallback expression used by a `??` initialiser.
   static String fallbackFor(FieldDef field, [TypeResolver? resolver]) {
     if (field.isArray) {
+      // A fixed-size array must be built at its declared length. rosbridge
+      // asserts it -- "the 'k' field must be a set or sequence with length 9"
+      // -- and drops the publish, so a zero-length default silently breaks
+      // every CameraInfo the user did not fill in by hand.
+      final fixed =
+          field.arrayKind == ArrayKind.fixed ? (field.arraySize ?? 0) : 0;
       final typed = typedListFor(field.type);
       if (typed != null) {
         final elements = _defaultElements(field);
@@ -348,7 +391,21 @@ abstract final class DartEmitter {
           final values = elements.map((e) => literal(e, scalar)).join(', ');
           return '$typed.fromList(const [$values])';
         }
-        return '$typed(0)';
+        return '$typed($fixed)';
+      }
+      if (fixed > 0) {
+        final scalar = scalarDartType(field.type);
+        final element = scalar == null
+            ? (resolver?.providedFallback(field.type) ??
+                '${className(field.type)}()')
+            : switch (scalar) {
+                'bool' => 'false',
+                'int' => '0',
+                'double' => '0.0',
+                _ => "''",
+              };
+        // Messages are immutable, so one shared instance per slot is fine.
+        return 'List.filled($fixed, $element)';
       }
       return 'const []';
     }

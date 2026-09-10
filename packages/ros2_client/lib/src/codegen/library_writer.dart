@@ -273,19 +273,26 @@ final class LibraryWriter {
     // Typed-data and list fields need element-wise comparison; identity would
     // report two structurally identical messages as different.
     final needsDeep = fields.any((f) => f.isArray);
+    // A field named `other` would be captured by the parameter:
+    // `other.other == other` compares the argument's field to the argument
+    // itself. That compiles, and makes == false for every pair of equal
+    // messages. Renaming the parameter is invisible to callers.
+    final param = fields.any((f) => DartEmitter.fieldName(f.name) == 'other')
+        ? r'$other'
+        : 'other';
     out
       ..writeln('  @override')
-      ..writeln('  bool operator ==(Object other) =>')
-      ..writeln('      identical(this, other) ||');
+      ..writeln('  bool operator ==(Object $param) =>')
+      ..writeln('      identical(this, $param) ||');
     if (fields.isEmpty) {
-      out.writeln('      other is $name;');
+      out.writeln('      $param is $name;');
     } else {
       final comparisons = fields.map((f) {
         final n = DartEmitter.fieldName(f.name);
-        return f.isArray ? '_listEquals(other.$n, $n)' : 'other.$n == $n';
+        return f.isArray ? '_listEquals($param.$n, $n)' : '$param.$n == $n';
       }).join(' &&\n          ');
       out
-        ..writeln('      (other is $name &&')
+        ..writeln('      ($param is $name &&')
         ..writeln('          $comparisons);');
     }
     out.writeln();

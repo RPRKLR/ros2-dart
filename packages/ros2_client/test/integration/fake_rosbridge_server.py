@@ -77,12 +77,14 @@ class RosbridgeHandler(tornado.websocket.WebSocketHandler):
                        "values": {"sequence": "complete"}, "status": 4,
                        "result": True})
 
-        elif op == "set_level":
-            pass
-
+        # Deliberately no set_level and no outgoing "status" frames: real
+        # rosbridge implements neither. rosbridge_protocol.py registers no
+        # status capability, and Protocol.log writes to the robot's ROS logger
+        # only. An earlier version of this fake answered both, which is exactly
+        # why the client shipped a set_level op that every real bridge rejects
+        # -- a fake that agrees with the client tests nothing.
         elif op == "advertise":
-            self.send({"op": "status", "level": "info",
-                       "msg": f"advertised {msg['topic']}", "id": msg.get("id")})
+            pass
 
 
 def main():

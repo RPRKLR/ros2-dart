@@ -114,6 +114,7 @@ final class Ros2Client {
     this.reconnectPolicy = const ReconnectPolicy(),
     this.defaultCompression = Compression.cbor,
     this.statusLevel = StatusLevel.warning,
+    this.sendSetLevel = false,
     RosTransport Function(Uri uri)? transportFactory,
   }) : _transportFactory = transportFactory ?? WebSocketTransport.new;
 
@@ -134,7 +135,17 @@ final class Ros2Client {
   final Compression defaultCompression;
 
   /// Minimum severity of server [status] messages to forward.
+  /// Requested verbosity for `set_level`, if [sendSetLevel] is on.
   final StatusLevel statusLevel;
+
+  /// Whether to send the `set_level` op on connect.
+  ///
+  /// Off by default, because **rosbridge does not implement it**. There is no
+  /// `set_level` capability in `rosbridge_protocol.py`, so a real bridge
+  /// answers with `Unknown operation: set_level` on the robot's own console,
+  /// once per connect. Some forks and older bridges do support it; turn this
+  /// on for those.
+  final bool sendSetLevel;
 
   final RosTransport Function(Uri uri) _transportFactory;
 
@@ -180,17 +191,42 @@ final class Ros2Client {
   RosConnectionState get state => _state;
 
   /// Connection state changes. Emits the current state to new listeners.
-  Stream<RosConnectionState> get states async* {
-    yield _state;
-    yield* _stateController.stream;
+  ///
+  /// Deliberately not `async*` with a leading `yield`: that subscribes to the
+  /// underlying controller several microtasks after `listen()` returns, and
+  /// every state added in between is lost. A `StreamBuilder` built in the same
+  /// frame as `connect()` would miss the `connected` transition and sit on
+  /// "connecting" forever against a healthy client.
+  Stream<RosConnectionState> get states {
+    late StreamController<RosConnectionState> controller;
+    StreamSubscription<RosConnectionState>? sub;
+    controller = StreamController<RosConnectionState>(
+      onListen: () {
+        // Both in the same turn, so no state can slip between them.
+        controller.add(_state);
+        sub = _stateController.stream
+            .listen(controller.add, onDone: controller.close);
+      },
+      onCancel: () => sub?.cancel(),
+    );
+    return controller.stream;
   }
 
   bool get isConnected => _state == RosConnectionState.connected;
 
-  /// Diagnostics from the rosbridge server (bad topic name, type mismatch...).
+  /// Client-side diagnostics: connection errors, malformed frames, dropped
+  /// fragments, buffer overflows.
   ///
-  /// Worth surfacing in development: rosbridge reports most user errors here
-  /// rather than failing the operation.
+  /// **This does not carry server-side errors**, however much the rosbridge
+  /// protocol document implies otherwise. rosbridge 2.x has no `status`
+  /// capability — `rosbridge_protocol.py` registers none, and `Protocol.log`
+  /// writes to the robot's own ROS logger and nowhere else. So a type
+  /// mismatch on advertise, an unknown topic, or a rejected QoS profile is
+  /// visible only on the robot's console, and the operation is silently
+  /// inert on this end.
+  ///
+  /// Worth listening to in development regardless: everything this client
+  /// itself can tell you arrives here.
   Stream<RosStatus> get status => _statusController.stream;
 
   /// Opens the connection. Completes when the socket is ready.
@@ -236,7 +272,9 @@ final class Ros2Client {
 
       _connectedAt = DateTime.now();
       _setState(RosConnectionState.connected);
-      _send({'op': Op.setLevel, 'level': statusLevel.wireName});
+      if (sendSetLevel) {
+        _send({'op': Op.setLevel, 'level': statusLevel.wireName});
+      }
       _resubscribeAll();
       _flushOutbox();
       completer.complete();
@@ -647,8 +685,38 @@ final class Ros2Client {
     if (!_stateController.isClosed) _stateController.add(next);
   }
 
+  /// Fails every request that cannot survive losing the socket.
+  ///
+  /// The bridge forgets a client's goals and in-flight service calls the
+  /// moment the connection drops, so nothing will ever answer them. Leaving
+  /// them pending means `await handle.result` hangs for the life of the
+  /// process with nothing on `status` or `states` to explain it. `close()` has
+  /// always failed them; a reconnect has to do the same.
+  void _failInFlight() {
+    for (final call in _pendingCalls.values) {
+      if (!call.isCompleted) {
+        call.completeError(ServiceCallException(
+            '<disconnected>', 'Connection lost before the service responded'));
+      }
+    }
+    _pendingCalls.clear();
+
+    // Copied first: failing a goal runs a callback that removes it from the
+    // map, which would otherwise mutate it during iteration.
+    final goals = List<_ActiveGoal>.of(_activeGoals.values);
+    _activeGoals.clear();
+    for (final goal in goals) {
+      goal.fail(ActionFailedException(goal.actionName, GoalStatus.unknown,
+          'Connection lost before the goal finished'));
+    }
+  }
+
   void _onTransportError(Object error, StackTrace stack) {
     if (_state == RosConnectionState.closed) return;
+    // Without this the reason a link died -- TLS failure, refused connection,
+    // a peer that vanished -- is unreachable: the reconnect loop swallows it
+    // and only the state change is observable.
+    _emitStatus(RosStatus(StatusLevel.error, 'Connection error: $error'));
     _scheduleReconnect();
   }
 
@@ -657,6 +725,7 @@ final class Ros2Client {
     _reconnectTimer?.cancel();
     // Partial fragments cannot be completed across a reconnect.
     _fragments.clear();
+    _failInFlight();
     unawaited(_incomingSub?.cancel());
     _incomingSub = null;
     unawaited(_transport?.close());
@@ -682,7 +751,12 @@ final class Ros2Client {
     _reconnectAttempt++;
     _reconnectTimer = Timer(delay, () {
       if (_state == RosConnectionState.closed) return;
-      connect().catchError((Object _) {});
+      connect().catchError((Object error) {
+        // The first connect() surfaces its failure to its caller; every retry
+        // after that has nowhere else to report.
+        _emitStatus(RosStatus(StatusLevel.error,
+            'Reconnect attempt $_reconnectAttempt failed: $error'));
+      });
     });
   }
 

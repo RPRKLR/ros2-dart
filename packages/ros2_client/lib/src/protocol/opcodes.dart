@@ -27,6 +27,7 @@ abstract final class Op {
   static const fragment = 'fragment';
   static const png = 'png';
   static const status = 'status';
+  /// Not implemented by rosbridge 2.x; see `Ros2Client.sendSetLevel`.
   static const setLevel = 'set_level';
   static const auth = 'auth';
 }

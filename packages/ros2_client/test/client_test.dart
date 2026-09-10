@@ -29,11 +29,29 @@ void main() {
   });
 
   group('connection', () {
-    test('reaches connected state and announces status level', () async {
+    test('reaches connected state without sending set_level', () async {
       await connect();
       expect(ros.isConnected, isTrue);
       expect(ros.state, RosConnectionState.connected);
-      expect(bridge.lastOf('set_level'), isNotNull);
+      // rosbridge has no set_level capability: rosbridge_protocol.py registers
+      // none, and a real bridge answers "Unknown operation: set_level" on the
+      // robot's own console, once per connect. Sending it by default is noise
+      // in someone else's log.
+      expect(bridge.lastOf('set_level'), isNull);
+    });
+
+    test('sends set_level only when asked, for forks that support it',
+        () async {
+      final other = FakeBridge();
+      final client = Ros2Client(Uri.parse('ws://fake:9090'),
+          transportFactory: (_) => other,
+          reconnectPolicy: ReconnectPolicy.none,
+          sendSetLevel: true,
+          statusLevel: StatusLevel.error);
+      addTearDown(client.close);
+      await client.connect();
+
+      expect(other.lastOf('set_level')!['level'], 'error');
     });
 
     test('buffers commands sent while offline and replays them', () async {
@@ -354,6 +372,83 @@ void main() {
       await pump();
       await ros.close().timeout(const Duration(seconds: 2));
       expect(ros.state, RosConnectionState.closed);
+    });
+  });
+
+
+  group('losing the connection', () {
+    test('states does not lose the connected transition', () async {
+      // Subscribing and connecting in the same turn is the Flutter shape:
+      // a StreamBuilder built in the same frame as the connect() call. An
+      // async* getter with a leading yield subscribes microtasks later and
+      // drops everything in between, leaving the UI on "connecting" forever.
+      final own = FakeBridge();
+      final client = Ros2Client(Uri.parse('ws://fake:9090'),
+          transportFactory: (_) => own,
+          reconnectPolicy: ReconnectPolicy.none);
+      addTearDown(client.close);
+
+      final seen = <RosConnectionState>[];
+      client.states.listen(seen.add);
+      await client.connect();
+      await pump();
+
+      // The regression: connected must be observed even though listen() and
+      // connect() happened in the same turn.
+      expect(seen, contains(RosConnectionState.connected));
+      expect(seen.first, isNot(RosConnectionState.connected),
+          reason: 'the state current at listen() comes first');
+    });
+
+    test('fails in-flight service calls instead of hanging forever', () async {
+      await connect();
+      final call = ros.callServiceJson('/add_two_ints', const {'a': 1});
+      // Attached before the drop: an error reaching a future nobody is
+      // listening to yet is reported as an unhandled async error.
+      final expectation =
+          expectLater(call, throwsA(isA<ServiceCallException>()));
+      await pump();
+
+      // The bridge forgets the call when the socket drops, so nothing will
+      // ever answer it.
+      bridge.drop();
+      await expectation;
+    });
+
+    test('fails in-flight action goals instead of hanging forever', () async {
+      await connect();
+      final handle = ros.sendGoal<_Goal, int, String>(
+        '/fib',
+        _Goal(5),
+        codec: ActionCodec<_Goal, int, String>(
+          actionType: 'test_msgs/action/Fibonacci',
+          encodeGoal: (g) => {'order': g.order},
+          decodeFeedback: (json) => (json['partial'] as num).toInt(),
+          decodeResult: (json) => '${json['sequence']}',
+        ),
+      );
+      final expectation =
+          expectLater(handle.result, throwsA(isA<ActionFailedException>()));
+      await pump();
+
+      bridge.drop();
+      await expectation;
+      expect(handle.isDone, isTrue);
+    });
+
+    test('reports why the connection died', () async {
+      await connect();
+      final statuses = <RosStatus>[];
+      ros.status.listen(statuses.add);
+
+      bridge.drop();
+      await pump();
+
+      // Without this the reason is unreachable: the reconnect loop swallows
+      // it and only the state change is observable.
+      expect(statuses, isNotEmpty);
+      expect(statuses.first.level, StatusLevel.error);
+      expect(statuses.first.message, contains('Connection error'));
     });
   });
 

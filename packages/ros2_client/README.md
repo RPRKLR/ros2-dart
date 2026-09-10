@@ -113,6 +113,37 @@ driver declares it `float32` or `uint16`. A cloud whose `data` is shorter than
 its header claims — a truncated message — reports the points that actually
 arrived rather than throwing, since a partial cloud is still worth drawing.
 
+### CBOR has a hard size ceiling, and crossing it is silent
+
+**A CBOR message larger than the bridge's `max_message_size` is never
+delivered.** This is not opt-in and there is no client-side workaround.
+
+`Protocol.__init__` sets `self.fragment_size = self.max_message_size`, so
+fragmentation is *always* armed. Anything bigger is handed to
+`Fragmentation.fragment`, which re-serialises the already-encoded CBOR payload
+with `json.dumps`, fails (`reject_bytes is on and '...' is bytes`), and sends
+nothing — logging only on the robot's own console. The subscription is
+accepted and simply never produces a message. Verified against rosbridge 2.0.7:
+with `max_message_size:=200000`, a 640x480 `rgb8` image arrives fine over
+`Compression.none` and never arrives at all over `Compression.cbor`.
+
+The ceiling is **1 MB** for a bare `rosbridge_websocket` node and **10 MB**
+under the shipped launch file. A 640x480 `rgb8` image is 900 KB of CBOR; 1080p
+is ~6 MB; 4K and full-resolution point clouds exceed both. So the exact topics
+CBOR exists for are the ones that hit it.
+
+Raise the limit on the bridge:
+
+```bash
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
+  max_message_size:=50000000
+```
+
+Or drop to `Compression.none` for that one topic — JSON fragments correctly, so
+it works at any size, just larger on the wire and slower to decode. Lowering
+`fragment_size` does not help: `min(requested, max_message_size)` caps it, so
+it only moves the cliff closer.
+
 ### Fragmentation and CBOR do not mix
 
 `fragment_size` works over JSON — a 1.2 MB image at 64 KB a fragment

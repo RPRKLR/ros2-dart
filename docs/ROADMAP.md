@@ -217,6 +217,105 @@ Still owed here: `TfBuffer` is only exercised against synthetic transforms.
 A real robot's tf tree — dozens of frames, static and dynamic mixed, clocks
 that jump on `/clock` — is unverified.
 
+## Audit, 2026-09-10 — what four parallel reviews found
+
+Four agents audited the client core, the Flutter widgets, the generator, and
+one specific risk class: *the bridge accepts a request and then delivers
+nothing, with no error on either side*. That class had already produced three
+shipped bugs. Everything below was verified against rosbridge 2.0.7's Python
+or reproduced through the generator before being fixed.
+
+### The fakes were inventing capabilities
+
+The root cause of the whole class. `test/integration/fake_rosbridge_server.py`
+implemented `set_level` and replied with `{"op": "status"}` — and a test
+asserted the client sent `set_level`. **Neither exists in rosbridge.**
+`rosbridge_protocol.py` registers no status capability, `Protocol.log` writes
+to the robot's ROS logger and nowhere else, and a real bridge answers
+`Unknown operation: set_level` on its own console once per connect.
+
+So `Ros2Client.status` never carried a single server-side error, while its doc
+comment claimed it carried "most user errors". A type mismatch on advertise, an
+unknown topic, a rejected QoS profile: all invisible here, operation silently
+inert. `sendSetLevel` is now off by default, the fake no longer implements
+either op, and the doc says what the stream actually contains.
+
+### CBOR has a hard, silent size ceiling
+
+Worse than the fragmentation bug already fixed, because nobody opts in.
+`Protocol.__init__` sets `fragment_size = max_message_size`, so fragmentation
+is *always* armed; any CBOR frame above it goes through `json.dumps`, fails on
+bytes, and is dropped. The limit is 1 MB bare, 10 MB under the shipped launch
+file — and a 640x480 `rgb8` image is 900 KB of CBOR, 1080p is ~6 MB. The topics
+CBOR exists for are exactly the ones that hit it. Reproduced with
+`max_message_size:=200000`: the image arrives over JSON, never over CBOR.
+
+There is no client-side fix — lowering `fragment_size` only moves the cliff
+closer, since the server caps it at `max_message_size`. Documented instead,
+with the launch argument that raises it.
+
+### Fixed-size arrays defaulted to length zero
+
+`float64[9] k` generated `Float64List(0)`. rosbridge asserts the exact length
+when populating the message and drops the publish, so every `CameraInfo` a
+user did not fill in by hand failed. 49 real Humble definitions have fixed
+arrays; the shipped `ros2_msgs_common` had `covariance` at 0 instead of 36,
+`MeshTriangle.vertex_indices` at 0 instead of 3, and `UUID.uuid` at 0 instead
+of 16 — the last used by every action goal.
+
+### Connection loss orphaned everything in flight
+
+`close()` failed pending service calls and action goals; `_scheduleReconnect`
+did neither. The bridge forgets them the moment the socket drops, so
+`await handle.result` hung for the life of the process with nothing on
+`status` or `states` to explain it. Both are now failed on disconnect.
+
+Alongside it: `_onTransportError` discarded its error and the retry loop ran
+`catchError((_) {})`, so *why* a link died — TLS, refused, peer vanished — was
+unreachable after the first attempt. Both now emit status.
+
+### `states` dropped the `connected` transition
+
+`get states async* { yield _state; yield* _controller.stream; }` subscribes to
+the controller several microtasks after `listen()` returns, and loses
+everything added in between. A `StreamBuilder` built in the same frame as
+`connect()` — the ordinary Flutter shape — missed `connected` and sat on
+"connecting" against a healthy client. One event-loop turn between the two made
+it work, which is why it would have looked intermittent.
+
+### Generator defects reproduced and fixed
+
+- `$` was not escaped in string literals, so a ROS constant of `$1.00 per
+  ${unit}` became Dart interpolation: a compile error, or worse, silently the
+  wrong text where the name resolved.
+- A message named `Field` shadowed the `codegen_support` import and broke
+  *every other message in the library*, since their decode calls resolved to
+  the message class. Now `RosField`, alongside the other support names.
+- A field named `other` was captured by the `==` parameter:
+  `other.other == other` compiles and makes `==` false for every pair of equal
+  messages. The parameter is renamed when a field would capture it.
+- A constant named `FROM_JSON` collided with the generated factory.
+
+### Still open from the audits
+
+- `latch: true` is ignored, because the client always sends `qos` and
+  `publishers.py` documents `latch` as "ignored if qos is provided".
+- Per-subscription `throttle_rate` and `queue_length` are `min()`-merged
+  across every listener on a topic, so one unthrottled subscriber disables
+  throttling for all of them.
+- `cancel_action_goal` cannot be delivered while a goal runs on a
+  default-launched bridge, because `send_action_goals_in_new_thread` defaults
+  false and the goal parks the client's only queue thread.
+- A hung service call wedges that same queue thread for the life of the
+  connection; the client-side timeout is bookkeeping only.
+- `rosapi/set_param` has no `successful` field, so `setParam` always reports
+  true.
+- Every fragmented message uses id `"0"` (`fragmentation_seed` increments an
+  instance attribute on a per-send object), so two topics fragmenting
+  concurrently interleave under one id.
+- `publishOnce` while offline replays a publish with no advertisement.
+- The outbox drops the *newest* commands on overflow and keeps 256 stale ones.
+
 ## v0.4 — Performance and scale
 
 - ✅ A published benchmark suite (`benchmark/wire_benchmark.dart`), because

@@ -60,7 +60,7 @@ final class Mesh implements RosMessage {
 final class MeshTriangle implements RosMessage {
   MeshTriangle({
     Uint32List? vertexIndices,
-  }) : vertexIndices = vertexIndices ?? Uint32List(0);
+  }) : vertexIndices = vertexIndices ?? Uint32List(3);
 
   factory MeshTriangle.fromJson(Map<String, Object?> json) => MeshTriangle(
         vertexIndices: Field.asUint32List(json['vertex_indices']),
@@ -103,7 +103,7 @@ final class MeshTriangle implements RosMessage {
 final class Plane implements RosMessage {
   Plane({
     Float64List? coef,
-  }) : coef = coef ?? Float64List(0);
+  }) : coef = coef ?? Float64List(4);
 
   factory Plane.fromJson(Map<String, Object?> json) => Plane(
         coef: Field.asFloat64List(json['coef']),

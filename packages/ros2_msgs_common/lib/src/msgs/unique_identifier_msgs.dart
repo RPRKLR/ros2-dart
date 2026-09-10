@@ -16,7 +16,7 @@ import 'package:ros2_client/codegen_support.dart';
 final class UUID implements RosMessage {
   UUID({
     Uint8List? uuid,
-  }) : uuid = uuid ?? Uint8List(0);
+  }) : uuid = uuid ?? Uint8List(16);
 
   factory UUID.fromJson(Map<String, Object?> json) => UUID(
         uuid: Field.asBytes(json['uuid']),
