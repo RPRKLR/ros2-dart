@@ -19,7 +19,3 @@ dependencies:
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.0
-
-dependency_overrides:
-  ros2_client:
-    path: ../ros2_client
