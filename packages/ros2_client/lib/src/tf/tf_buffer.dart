@@ -36,7 +36,32 @@ final class _FrameHistory {
 
   bool get isStatic => staticTransform != null;
 
-  void insert(_Sample sample, Duration cacheTime) {
+  /// Consecutive samples rejected for being implausibly far ahead.
+  int _futureRejects = 0;
+
+  /// How many in a row before the jump is accepted as a real clock change.
+  static const int _futureRejectLimit = 10;
+
+  /// Adds a sample, returning false if it was rejected as a clock outlier.
+  ///
+  /// One sample from a node whose clock is a minute fast would otherwise
+  /// anchor the trim window a minute into the future, dropping every good
+  /// sample already held *and* every good sample that arrives afterwards —
+  /// the buffer never recovers, and the UI silently stops updating with no
+  /// diagnostic. Clock skew between a robot and a bridge is routine.
+  ///
+  /// So a sample more than [cacheTime] ahead of everything held is refused.
+  /// If they keep coming, the clock really has moved and the buffer
+  /// re-baselines onto it rather than rejecting good data forever.
+  bool insert(_Sample sample, Duration cacheTime) {
+    if (samples.isNotEmpty &&
+        sample.stampMicros - samples.last.stampMicros >
+            cacheTime.inMicroseconds) {
+      if (++_futureRejects < _futureRejectLimit) return false;
+      samples.clear();
+    }
+    _futureRejects = 0;
+
     // Usually append; a late-arriving sample needs an ordered insert.
     if (samples.isEmpty || sample.stampMicros >= samples.last.stampMicros) {
       samples.add(sample);
@@ -54,6 +79,7 @@ final class _FrameHistory {
       drop++;
     }
     if (drop > 0) samples.removeRange(0, drop);
+    return true;
   }
 
   /// The transform at [micros], interpolating between the bracketing samples.
@@ -62,7 +88,16 @@ final class _FrameHistory {
   /// [tolerance].
   RosTransform? at(int? micros, Duration tolerance) {
     final staticValue = staticTransform;
-    if (staticValue != null) return staticValue;
+    // Dynamic samples win when there are any. A frame published on both /tf
+    // and /tf_static is a robot-side mistake, but answering from the latched
+    // value while live data sits unread in the buffer is the dangerous way to
+    // resolve it: the marker stops moving and nothing says why.
+    if (samples.isEmpty) return staticValue;
+    final dynamicValue = _dynamicAt(micros, tolerance);
+    return dynamicValue ?? staticValue;
+  }
+
+  RosTransform? _dynamicAt(int? micros, Duration tolerance) {
     if (samples.isEmpty) return null;
 
     // A null or zero stamp means "latest available", matching tf2.
@@ -262,6 +297,12 @@ final class TfBuffer {
       _frames.values.any((h) => h.parent == frame);
 
   /// [frame, parent, ..., root].
+  ///
+  /// Throws [TfException] on a cycle. Truncating at the repeat instead would
+  /// let each direction resolve through a different edge, so `lookup(a, b)`
+  /// and `lookup(b, a)` disagree and a round trip does not return to where it
+  /// started — a marker placed confidently in the wrong spot. A cycle means
+  /// the tf tree is broken; saying so is the only honest answer.
   List<String> _ancestry(String frame) {
     final chain = <String>[frame];
     final seen = <String>{frame};
@@ -270,9 +311,11 @@ final class TfBuffer {
       final history = _frames[current];
       if (history == null) break;
       final parent = history.parent;
-      // A cycle should not happen in a valid tf tree, but a malformed
-      // publisher must not hang the lookup.
-      if (!seen.add(parent)) break;
+      if (!seen.add(parent)) {
+        throw TfException(
+            'The tf tree contains a cycle: ${[...chain, parent].join(' -> ')}. '
+            'Two publishers are probably claiming the same child frame.');
+      }
       chain.add(parent);
       current = parent;
     }
@@ -306,6 +349,12 @@ final class TfBuffer {
   }
 
   /// tf2 treats "/odom" and "odom" as the same frame.
-  static String _strip(String frame) =>
+  ///
+  /// Public because everything comparing frame names has to agree with the
+  /// buffer, and a helper that only the buffer could reach is how `TfListener`
+  /// ended up with a name check the buffer disagreed with.
+  static String normaliseFrame(String frame) =>
       frame.startsWith('/') ? frame.substring(1) : frame;
+
+  static String _strip(String frame) => normaliseFrame(frame);
 }

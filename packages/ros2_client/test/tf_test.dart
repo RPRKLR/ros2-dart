@@ -376,4 +376,192 @@ void main() {
           closeTo(expected.z, 1e-9));
     });
   });
+
+  group('robustness against bad publishers', () {
+    test('one future-stamped sample does not poison the buffer', () {
+      final buffer = TfBuffer(cacheTime: const Duration(seconds: 10));
+      for (var i = 0; i <= 20; i++) {
+        buffer.setTransform(tf('map', 'base', x: i.toDouble(), sec: 1000 + i));
+      }
+      expect(
+          buffer.lookup('map', 'base', time: RosTime(sec: 1010))!.translation.x,
+          10);
+
+      // A node whose clock is a minute fast. Anchoring the cache window on it
+      // would drop every sample held and every good one that follows, and the
+      // buffer would never recover.
+      buffer.setTransform(tf('map', 'base', x: 99, sec: 1080));
+
+      expect(buffer.lookup('map', 'base', time: RosTime(sec: 1010)), isNotNull,
+          reason: 'existing samples must survive one bad stamp');
+      for (var i = 21; i <= 50; i++) {
+        buffer.setTransform(tf('map', 'base', x: i.toDouble(), sec: 1000 + i));
+      }
+      expect(
+          buffer.lookup('map', 'base', time: RosTime(sec: 1050))!.translation.x,
+          50,
+          reason: 'and good data afterwards must still land');
+    });
+
+    test('a sustained clock jump is eventually accepted', () {
+      final buffer = TfBuffer(cacheTime: const Duration(seconds: 10));
+      buffer.setTransform(tf('map', 'base', x: 1, sec: 1000));
+      // Not an outlier: the clock really did move, and every message now
+      // carries the new time. Rejecting them forever would be worse.
+      for (var i = 0; i < 15; i++) {
+        buffer.setTransform(tf('map', 'base', x: 50, sec: 5000 + i));
+      }
+      expect(buffer.lookup('map', 'base')!.translation.x, 50);
+    });
+
+    test('a cycle is reported rather than answered inconsistently', () {
+      final buffer = TfBuffer();
+      buffer.setTransform(tf('a', 'b', x: 1), isStatic: true);
+      buffer.setTransform(tf('b', 'a', y: 5), isStatic: true);
+
+      // Truncating at the repeat let each direction resolve through a
+      // different edge, so a -> b -> a did not return to the origin.
+      expect(
+          () => buffer.lookupOrThrow('a', 'b'),
+          throwsA(isA<TfException>()
+              .having((e) => e.message, 'message', contains('cycle'))));
+      expect(buffer.lookup('a', 'b'), isNull);
+    });
+
+    test('live data is not hidden behind a static transform', () {
+      final buffer = TfBuffer();
+      buffer.setTransform(tf('map', 'base', x: 1), isStatic: true);
+      for (var i = 0; i < 5; i++) {
+        buffer.setTransform(
+            tf('map', 'base', x: 100 + i.toDouble(), sec: 10 + i));
+      }
+
+      // Answering from the latched value while live samples sit unread means
+      // the marker stops moving and nothing says why.
+      expect(buffer.lookup('map', 'base')!.translation.x, 104);
+    });
+
+    test('a static transform still answers when there is no dynamic data', () {
+      final buffer = TfBuffer();
+      buffer.setTransform(tf('map', 'laser', x: 7), isStatic: true);
+      expect(buffer.lookup('map', 'laser')!.translation.x, 7);
+      expect(
+          buffer
+              .lookup('map', 'laser', time: RosTime(sec: 99999))!
+              .translation
+              .x,
+          7);
+    });
+  });
+
+  group('gimbal lock', () {
+    /// Angle between two orientations, in degrees.
+    double angleBetween(Quaternion a, Quaternion b) {
+      final dot = (a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w).abs();
+      return 2 * math.acos(dot.clamp(-1.0, 1.0)) * 180 / math.pi;
+    }
+
+    test('rpy round-trips exactly at pitch = +/- 90 degrees', () {
+      // Straight up or down is not exotic: it is a mast camera, or a depth
+      // sensor pointed at the floor. Clamping pitch alone left roll and yaw as
+      // rounding noise, measured at up to 37 degrees of silent error.
+      const cases = [
+        (0.4, math.pi / 2, 1.9),
+        (1.0, -math.pi / 2, 0.5),
+        (0.4, math.pi / 2, -1.9),
+        (-1.2, -math.pi / 2, 2.7),
+        (0.0, math.pi / 2, 0.0),
+      ];
+      for (final c in cases) {
+        final q = Quaternion.fromRpy(c.$1, c.$2, c.$3);
+        final back = q.rpy;
+        final again = Quaternion.fromRpy(back.roll, back.pitch, back.yaw);
+        expect(angleBetween(q, again), lessThan(1e-4),
+            reason: 'rpy of (${c.$1}, ${c.$2}, ${c.$3}) does not reconstruct');
+        expect(back.roll, 0.0, reason: 'roll is taken as zero at the lock');
+        expect(back.pitch.abs(), closeTo(math.pi / 2, 1e-9));
+      }
+    });
+
+    test('near-lock still uses the ordinary decomposition', () {
+      const eps = 1e-6;
+      final q = Quaternion.fromRpy(0.4, math.pi / 2 - eps, 1.9);
+      final back = q.rpy;
+      expect(back.roll, closeTo(0.4, 1e-3));
+      expect(back.yaw, closeTo(1.9, 1e-3));
+    });
+  });
+
+  group('time conversion', () {
+    test('negative durations keep their sign', () {
+      // sec truncates toward zero while nanosec used Dart's always-positive
+      // %, so the halves disagreed: -0.5 s came back as +0.5 s.
+      for (final d in [
+        const Duration(milliseconds: -500),
+        const Duration(seconds: -1, milliseconds: -500),
+        const Duration(seconds: -3),
+        const Duration(milliseconds: 500),
+        const Duration(seconds: 2, milliseconds: 250),
+      ]) {
+        expect(RosDuration.fromDart(d).toDart(), d, reason: '$d');
+      }
+    });
+
+    test('pre-epoch times round-trip', () {
+      for (final t in [
+        DateTime.utc(1969, 12, 31, 23, 59, 59, 500),
+        DateTime.utc(1969, 1, 1),
+        DateTime.utc(1970, 1, 1),
+        DateTime.utc(2026, 9, 10, 12, 34, 56, 789),
+      ]) {
+        expect(RosTime.fromDateTime(t).toDateTime().toUtc(), t.toUtc(),
+            reason: '$t');
+      }
+    });
+
+    test('the nanosecond remainder is never negative', () {
+      final r = RosDuration.fromDart(const Duration(milliseconds: -1500));
+      expect(r.nanosec, greaterThanOrEqualTo(0));
+      expect(r.sec, -2);
+      expect(r.nanosec, 500000000);
+    });
+  });
+
+  group('Odometry covariance', () {
+    test('survives a decode and re-encode', () {
+      final covariance = List<double>.generate(36, (i) => i.toDouble());
+      final wire = {
+        'header': {'frame_id': 'odom'},
+        'child_frame_id': 'base_link',
+        'pose': {
+          'pose': {
+            'position': {'x': 1.0},
+          },
+          'covariance': covariance,
+        },
+        'twist': {
+          'twist': <String, Object?>{},
+          'covariance': covariance,
+        },
+      };
+
+      final odom = Odometry.fromJson(wire);
+      expect(odom.poseCovariance.length, 36);
+      expect(odom.poseCovariance[5], 5.0);
+
+      // Relaying used to turn "this is my uncertainty" into 36 zeros, which
+      // reads downstream as perfect certainty.
+      final out = odom.toJson();
+      final poseOut = (out['pose']! as Map<String, Object?>)['covariance']!;
+      expect((poseOut as List).cast<num>().take(6), [0, 1, 2, 3, 4, 5]);
+    });
+
+    test('a message without covariance still encodes the required 36', () {
+      final odom = Odometry.fromJson(const {'child_frame_id': 'base_link'});
+      final out = odom.toJson();
+      // rosbridge asserts the exact length and drops the publish otherwise.
+      expect(((out['pose']! as Map)['covariance']! as List).length, 36);
+      expect(((out['twist']! as Map)['covariance']! as List).length, 36);
+    });
+  });
 }

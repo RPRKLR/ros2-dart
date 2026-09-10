@@ -29,3 +29,62 @@ Initial release.
 - Graph introspection through `rosapi`, with timeouts sized for how slow those
   graph-wide queries actually are
 - `std_msgs`, `geometry_msgs`, `sensor_msgs` and `nav_msgs` core types
+
+## 0.1.1 (unreleased)
+
+Fixes from audits of the tf2 and message layers, neither of which had been
+reviewed before. The core maths came out clean — Hamilton products,
+`lookupTransform` composition order and `toMatrix4` all verified to ~1e-16
+against an independent derivation — but the edges around it did not.
+
+**Gimbal lock returned garbage roll and yaw.** At a pitch of exactly ±90° the
+`rpy` decomposition is degenerate, and clamping the pitch alone left roll and
+yaw as `atan2` of two rounding errors: up to 37° of silent error. Straight down
+is a mast camera or a depth sensor looking at the floor, not an exotic pose.
+Now returns `roll = 0` with the rotation folded into yaw, which reconstructs
+exactly. Near-lock is untouched — the ordinary formulae stay accurate to a
+pitch of `pi/2 - 1e-6`.
+
+**One future-stamped sample poisoned the whole tf buffer.** The cache window
+was anchored on the newest stamp, so a single message from a node whose clock
+was a minute fast dropped every sample held *and* every good sample that
+arrived afterwards. The buffer never recovered; the UI silently stopped
+updating. Clock skew between a robot and a bridge is routine. Implausible
+future stamps are now refused, with a re-baseline if they persist so a genuine
+clock change is still followed.
+
+**A static transform hid live data.** A frame published on both `/tf` and
+`/tf_static` answered from the latched value while dynamic samples sat unread,
+so the frame stopped moving with no diagnostic. Dynamic samples now win, with
+the static one as fallback.
+
+**A cycle in the tree gave two contradictory answers** instead of an error:
+`lookup(a, b)` and `lookup(b, a)` resolved through different edges and a round
+trip did not return to its origin. Now throws.
+
+**`/tf` and `/tf_static` used the wrong QoS depth.** `tf2_ros` uses reliable
+depth 100 for both; a best-effort keep-last-5 reader drops transforms under
+load, and a one-deep transient-local reader keeps only one publisher's latched
+backlog — so some static frames never arrived at all.
+
+**`waitForFrame` was the only API that did not strip a leading `/`**, so it
+blocked for its full timeout on a frame the robot was publishing.
+
+**Negative durations and pre-epoch times were a second wrong**, and flipped
+sign: seconds truncated toward zero while nanoseconds used Dart's
+always-positive `%`. `-0.5 s` came back as `+0.5 s`.
+
+**`Odometry` discarded the covariance it was given** and re-encoded 36 zeros,
+so relaying a message turned "this is my uncertainty" into "I am certain".
+Both matrices are now carried through.
+
+**`PointCloud2` ignored `row_step`**, reading coordinates out of the row
+padding an organised cloud from a depth camera contains, and shifting every
+point after the first row.
+
+**`PointCloud2` and `TFMessage` had no `==`**, contradicting the value-type
+contract every other message honours. `PointCloud2.fromJson` also defaulted
+`height` to 0 and `is_dense` to false, disagreeing with its own constructor.
+
+Also: `wss://` verified against a TLS bridge, including certificate pinning
+for the self-signed case; CI added; the tree is now `dart format` clean.

@@ -13,10 +13,20 @@ final class RosTime implements RosMessage {
         nanosec: Field.asInt(json['nanosec']),
       );
 
-  factory RosTime.fromDateTime(DateTime t) => RosTime(
-        sec: t.millisecondsSinceEpoch ~/ 1000,
-        nanosec: (t.microsecondsSinceEpoch % 1000000) * 1000,
-      );
+  /// ROS times carry a non-negative nanosecond remainder, so the seconds must
+  /// floor rather than truncate. Truncating toward zero while taking Dart's
+  /// always-positive `%` made every pre-epoch instant a full second wrong, and
+  /// the round trip did not return the value it was given.
+  factory RosTime.fromDateTime(DateTime t) {
+    final micros = t.microsecondsSinceEpoch;
+    final sec = _floorDiv(micros, 1000000);
+    return RosTime(sec: sec, nanosec: (micros - sec * 1000000) * 1000);
+  }
+
+  static int _floorDiv(int a, int b) {
+    final q = a ~/ b;
+    return (a % b != 0 && (a < 0) != (b < 0)) ? q - 1 : q;
+  }
 
   final int sec;
   final int nanosec;
@@ -54,10 +64,14 @@ final class RosDuration implements RosMessage {
         nanosec: Field.asInt(json['nanosec']),
       );
 
-  factory RosDuration.fromDart(Duration d) => RosDuration(
-        sec: d.inSeconds,
-        nanosec: (d.inMicroseconds % 1000000) * 1000,
-      );
+  /// As [RosTime.fromDateTime]: floor the seconds so the non-negative
+  /// nanosecond remainder stays consistent with them. `d.inSeconds` truncates
+  /// toward zero, which turned -0.5 s into +0.5 s.
+  factory RosDuration.fromDart(Duration d) {
+    final micros = d.inMicroseconds;
+    final sec = RosTime._floorDiv(micros, 1000000);
+    return RosDuration(sec: sec, nanosec: (micros - sec * 1000000) * 1000);
+  }
 
   final int sec;
   final int nanosec;

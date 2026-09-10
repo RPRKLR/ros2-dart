@@ -53,7 +53,13 @@ final class PointCloudReader {
 
     // The header may promise more points than arrived. Trust the bytes.
     final declared = cloud.pointCount;
-    final available = cloud.data.lengthInBytes ~/ cloud.pointStep;
+    final padded = cloud.height > 1 &&
+        cloud.width > 0 &&
+        cloud.rowStep > cloud.width * cloud.pointStep;
+    // Whole rows only when padded: a partial padded row cannot be addressed.
+    final available = padded
+        ? (cloud.data.lengthInBytes ~/ cloud.rowStep) * cloud.width
+        : cloud.data.lengthInBytes ~/ cloud.pointStep;
     return PointCloudReader._(
       cloud,
       ByteData.sublistView(cloud.data),
@@ -69,6 +75,11 @@ final class PointCloudReader {
   final PointCloud2 cloud;
   final ByteData _bytes;
   final Endian _endian;
+
+  /// Whether `row_step` leaves a gap after each row of points.
+  late final bool _rowsArePadded = cloud.height > 1 &&
+      cloud.width > 0 &&
+      cloud.rowStep > cloud.width * cloud.pointStep;
 
   /// Points actually readable from the buffer.
   ///
@@ -137,7 +148,7 @@ final class PointCloudReader {
     final out = Float32List(capacity);
     var n = 0;
     for (var i = 0; i < length; i += stride) {
-      final base = i * cloud.pointStep;
+      final base = _byteOffsetOf(i);
       final px = _coordinate(x, base);
       final py = _coordinate(y, base);
       final pz = _coordinate(z, base);
@@ -187,7 +198,20 @@ final class PointCloudReader {
     if (element < 0 || element >= count) {
       throw RangeError.index(element, field, 'element', null, count);
     }
-    return index * cloud.pointStep + field.offset + element * field.elementSize;
+    return _byteOffsetOf(index) + field.offset + element * field.elementSize;
+  }
+
+  /// Byte offset of point [index], honouring `row_step`.
+  ///
+  /// An organised cloud addresses point (row, col) as
+  /// `row * row_step + col * point_step`, and `row_step` may exceed
+  /// `width * point_step` — depth cameras pad rows. Treating the buffer as one
+  /// flat run of points reads coordinates out of the padding and shifts every
+  /// point after the first row.
+  int _byteOffsetOf(int index) {
+    if (!_rowsArePadded) return index * cloud.pointStep;
+    final row = index ~/ cloud.width;
+    return row * cloud.rowStep + (index - row * cloud.width) * cloud.pointStep;
   }
 
   @override

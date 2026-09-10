@@ -600,14 +600,19 @@ final class PointCloud2 implements RosMessage {
 
   factory PointCloud2.fromJson(Map<String, Object?> json) => PointCloud2(
         header: Field.asMessage(json['header'], Header.fromJson),
-        height: Field.asInt(json['height']),
+        // Absent keys fall back to the constructor's defaults rather than the
+        // converters' zeros: height 0 makes every point unreadable, and
+        // is_dense false claims invalid points that are not there.
+        height: json.containsKey('height') ? Field.asInt(json['height']) : 1,
         width: Field.asInt(json['width']),
         fields: Field.asList(json['fields'], PointField.fromJson),
         isBigendian: Field.asBool(json['is_bigendian']),
         pointStep: Field.asInt(json['point_step']),
         rowStep: Field.asInt(json['row_step']),
         data: Field.asBytes(json['data']),
-        isDense: Field.asBool(json['is_dense']),
+        isDense: json.containsKey('is_dense')
+            ? Field.asBool(json['is_dense'])
+            : true,
       );
 
   static final Uint8List _noBytes = Uint8List(0);
@@ -662,6 +667,24 @@ final class PointCloud2 implements RosMessage {
   @override
   String toString() => 'PointCloud2(${width}x$height, '
       '${fields.map((f) => f.name).join(",")}, ${data.lengthInBytes} bytes)';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PointCloud2 &&
+          other.header == header &&
+          other.height == height &&
+          other.width == width &&
+          other.isBigendian == isBigendian &&
+          other.pointStep == pointStep &&
+          other.rowStep == rowStep &&
+          other.isDense == isDense &&
+          _listEquals(other.fields, fields) &&
+          _listEquals(other.data, data));
+
+  @override
+  int get hashCode => Object.hash(header, height, width, pointStep, rowStep,
+      isDense, Object.hashAll(fields), Object.hashAll(data));
 }
 
 void registerSensorMsgs() {

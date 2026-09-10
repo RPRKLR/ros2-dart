@@ -292,6 +292,21 @@ final class TFMessage implements RosMessage {
 
   @override
   String toString() => 'TFMessage(${transforms.length} transforms)';
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! TFMessage || other.transforms.length != transforms.length) {
+      return false;
+    }
+    for (var i = 0; i < transforms.length; i++) {
+      if (other.transforms[i] != transforms[i]) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hashAll(transforms);
 }
 
 /// Registers every `geometry_msgs` codec.
