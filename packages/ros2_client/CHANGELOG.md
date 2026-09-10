@@ -89,7 +89,11 @@ the static one as fallback.
 `lookup(a, b)` and `lookup(b, a)` resolved through different edges and a round
 trip did not return to its origin. Now throws.
 
-**`/tf` and `/tf_static` used the wrong QoS depth.** `tf2_ros` uses reliable
+**`/tf` and `/tf_static` used the wrong QoS depth — and it lost real frames.**
+Confirmed against a robot with three independent static broadcasters: with the
+0.1.0 profiles only the *last* one's frame arrives, and looking up either of
+the others throws "does not exist in the tf tree". Every robot has more than
+one static broadcaster. `tf2_ros` uses reliable
 depth 100 for both; a best-effort keep-last-5 reader drops transforms under
 load, and a one-deep transient-local reader keeps only one publisher's latched
 backlog — so some static frames never arrived at all.

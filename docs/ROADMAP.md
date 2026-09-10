@@ -213,9 +213,25 @@ frames into one rebuild; an update that leaves the transform unchanged does
 not rebuild at all. An earlier post-frame-callback throttle was removed — it
 added a second frame of latency and bought nothing.
 
-Still owed here: `TfBuffer` is only exercised against synthetic transforms.
-A real robot's tf tree — dozens of frames, static and dynamic mixed, clocks
-that jump on `/clock` — is unverified.
+### Verified against a real tf tree ✅
+
+Done 2026-09-10. `example/real_tf_check.dart` runs against a ROS node
+broadcasting `map -> odom -> base_link` at 50 Hz plus three *independent*
+static broadcasters (`laser`, `camera`, `imu`), which is the shape a real
+robot has: a URDF publisher and one per sensor driver. 10/10 checks pass —
+every static frame arrives, the buffer fills to 102 samples, a three-level
+chain composes through a static leaf to the millimetre, and interpolation at a
+past timestamp resolves.
+
+**It also proved the QoS fix was load-bearing.** Reverting to the previous
+profiles — `sensorData` on `/tf`, depth-1 transient-local on `/tf_static` —
+makes `laser` and `camera` **never arrive at all**; only `imu`, the last
+broadcaster to publish, survives the one-deep queue. Anything looking those
+frames up throws "does not exist in the tf tree". That was shipped in 0.1.0,
+and it would hit every robot with more than one static broadcaster, which is
+every robot.
+
+Still owed: a clock that jumps on `/clock` is still unexercised.
 
 ## Audit, 2026-09-10 — what four parallel reviews found
 
@@ -532,7 +548,15 @@ glob.
 
 ## Still owed
 
-- Web/WASM verification in CI.
+- Runtime verification in a browser. Compiling is covered — the CI web job
+  builds the whole public surface under both dart2js and WASM, and all three
+  packages carry `platform:web` and `is:wasm-ready` on pub.dev — but nothing
+  has yet opened a socket to a bridge from a browser.
+- `packages/ros2_flutter/example` has no platform directories, so
+  `flutter run` does not work on a fresh clone without `flutter create .`
+  first.
+- CI itself has never executed: every job was run locally, step by step, but
+  the workflow has not run on GitHub because nothing is pushed yet.
 
 ## Large messages, verified against a real bridge ✅
 
