@@ -123,13 +123,64 @@ value, plus `SLOT_TYPES`, whose value is a Python repr with a memory address in
 it. `visualization_msgs/Marker` returns real constants and field names
 interleaved in one flat list, which is why filtering has to be per-message.
 
+## v0.2.2 — `ros2_msgs_common` ✅ *shipped*
+
+221 pre-generated messages, plus their services and actions, across nav2_msgs,
+control_msgs, visualization_msgs, lifecycle_msgs, diagnostic_msgs, tf2_msgs,
+action_msgs, shape_msgs, trajectory_msgs, unique_identifier_msgs and the parts
+of geometry_msgs and std_msgs the client does not bundle. About 400 KB of
+committed source, so nothing needs a ROS install at build time.
+`tool/regenerate.sh` rebuilds it byte-identically.
+
+Shipping this first required teaching the generator not to re-emit what the
+client already provides. Generating any package that references
+`std_msgs/Header` — nearly all of them — used to emit a second `Header`, and a
+second copy of every bundled type in the closure. Both then register a codec
+for the same ROS type name, `MessageRegistry` keeps whichever registered last,
+and `byRosType` silently starts resolving to the generated class. Worse, the
+`ros2_flutter` widgets are typed against the bundled classes and could not
+accept the generated ones at all.
+
+Generated libraries now reference bundled types through a prefixed
+`import 'package:ros2_client/ros2_client.dart' as ros2`, omit them from their
+own output and registration, and skip a package whose referenced types are
+entirely bundled. `--no-bundled` restores the self-contained behaviour.
+
+The prefix matters: the barrel exports plenty of non-message names
+(`Ros2Client`, `TfBuffer`, `Compression`) that a custom ROS package is free to
+collide with. That collision is exactly why generated code imported only
+`codegen_support.dart` in the first place; a prefix keeps the safety and the
+types.
+
+`BundledTypes` cannot be derived from the emitter — `std_msgs/Bool` is
+hand-written as `BoolMsg`, not `Bool` — so a test pins the table against the
+registry in both directions. Adding or renaming a bundled type now fails the
+build instead of quietly reintroducing a duplicate codec.
+
+Two problems only compiling the output revealed:
+
+**The bundled classes were not all default-constructible.** `StringMsg` and
+the other scalar wrappers took a required positional argument, now optional
+with the ROS default so `const StringMsg('hi')` still works. `RosImage`,
+`CompressedImage`, `LaserScan`, `JointState` and `OccupancyGrid` require their
+typed-data fields, for the same reason generated code uses a `??` initialiser
+for them; those five fall back to `fromJson(const {})`, which is exactly the
+ROS default because none declares a non-zero one. `Quaternion` must *not* take
+that path: its `.msg` says `float64 w 1`, so `Quaternion()` is the identity
+while `Quaternion.fromJson(const {})` would be an all-zero invalid rotation. A
+string table cannot be type-checked, so a test file compiles every one of those
+expressions.
+
+**The CLI reported parsed counts, not emitted ones,** so a library with eight
+bundled types excluded still claimed to have written them.
+
 ### Still owed here
 
-- Pre-generated `ros2_msgs_common` (action_msgs, tf2_msgs, nav2_msgs,
-  control_msgs) so most users never run the generator at all
 - `build.yaml`-compatible output, to fit normal Flutter build workflows
 - An online run against a robot with genuinely custom interfaces; everything
-  above was verified against stock Humble packages
+  so far was verified against stock Humble packages
+- `ros2_msgs_common` targets Humble only. Whether a Jazzy build differs enough
+  to need a second published version is unknown and untested.
 
 ## v0.3 — Transforms ✅ *shipped*
 

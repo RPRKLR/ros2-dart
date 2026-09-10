@@ -8,7 +8,8 @@ iOS, Linux, macOS, Windows and the web.
 | Package | What it is |
 |---|---|
 | [`packages/ros2_client`](packages/ros2_client) | Pure-Dart client: topics, services, actions, parameters, introspection |
-| [`packages/ros2_flutter`](packages/ros2_flutter) | Flutter widgets: connection lifecycle, camera, lidar, teleop |
+| [`packages/ros2_flutter`](packages/ros2_flutter) | Flutter widgets: connection lifecycle, camera, lidar, teleop, tf |
+| [`packages/ros2_msgs_common`](packages/ros2_msgs_common) | Pre-generated classes for nav2, control, tf2, markers and friends |
 
 Repo: <https://github.com/RPRKLR/ros2-dart>
 
@@ -42,8 +43,9 @@ flutter run
 ## Tests
 
 ```bash
-cd packages/ros2_client  && dart test      # 40 tests, incl. 8 end-to-end
-cd packages/ros2_flutter && flutter test   # 6 widget tests
+cd packages/ros2_client      && dart test     # 169 tests, incl. 8 end-to-end
+cd packages/ros2_flutter     && flutter test  # 10 widget tests
+cd packages/ros2_msgs_common && dart test     # 8 registration tests
 ```
 
 The end-to-end tests spawn a local Tornado server speaking the rosbridge
