@@ -246,10 +246,59 @@ await ros.setParam('/turtlesim:background_r', 255);
 ```dart
 ros.states.listen((s) => print(s.name));  // connecting/connected/reconnecting
 ros.status.listen((s) => print(s));       // diagnostics from the bridge
+
+unawaited(ros.connect());
+await ros.waitUntilConnected(timeout: const Duration(seconds: 20));
 ```
 
 Reconnection is automatic and re-issues every subscription and advertisement.
 Commands published while offline are buffered and replayed.
+
+`connect()` completes when the *first* attempt succeeds and throws when it
+fails — but on a robot link it is usually the retry loop that gets you
+connected, so "wait until this is usable" is `waitUntilConnected`, not
+`connect`. It throws a `TimeoutException` on the timeout you pass, and a
+`StateError` if the client is closed or the policy's `maxAttempts` runs out
+first.
+`nextRetryAt` and `reconnectAttempt` say when the next attempt is due, which is
+what a countdown in the UI is drawn from.
+
+### What the bridge supports
+
+```dart
+final bridge = await ros.probeBridge();
+print(bridge);   // BridgeInfo(ROS 2 humble, actions: yes)
+if (!bridge.supportsActions) { /* tell the operator to upgrade rosbridge */ }
+```
+
+Actions need `rosbridge_suite` >= 2.0.0, and an older bridge does not say so:
+it reports the unknown operation on the robot's own console and answers a goal
+with nothing at all, so `sendGoal` simply never completes. One probe at startup
+turns that into a message someone can act on. It reads `/rosapi/services` and
+looks for `/rosapi/action_servers` rather than calling it — on a default-
+launched bridge, calling a service that does not exist parks the bridge's only
+queue thread for the life of the connection.
+
+### Authentication
+
+rosbridge has none. The `auth` opcode in the protocol document was backed by
+`rosauth`, which was never ported to ROS 2; `rosbridge_library` 2.0.7 registers
+no `auth` capability, and a bridge sent one answers `Unknown operation: auth`
+on the robot's console and nothing at all to the client. So a credential has to
+be checked by something in front of the bridge — an nginx or Traefik that
+terminates TLS and proxies the WebSocket — and this client's job is only to
+carry it there:
+
+```dart
+// A subprotocol is the only handshake header a browser can set.
+final ros = Ros2Client(uri, protocols: ['rosbridge.v1', 'token.$token']);
+
+// Or in the query, if the proxy reads it there.
+final ros = Ros2Client(uri.replace(queryParameters: {'token': token}));
+```
+
+Verified against rosbridge 2.0.7: a handshake offering subprotocols is
+accepted, the bridge selects none, and traffic flows normally.
 
 ## Code generation
 

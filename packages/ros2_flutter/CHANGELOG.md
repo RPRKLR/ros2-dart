@@ -4,6 +4,18 @@
 
 Requires `ros2_client` 0.2.0.
 
+**New: `RosConnectionStatus`** — a status dot and label that counts down to
+the next reconnect attempt. Every robot UI grows one of these, and the part
+worth sharing is the countdown: the backoff doubles, so a bare "Reconnecting…"
+leaves an operator unable to tell a retry a second away from one half a minute
+away. Its ticker runs only while a retry is pending, and counts down by ticks
+rather than by wall clock, so a device picking up NTP does not make the robot
+look further away. The example app's hand-rolled connection chip is now this
+widget.
+
+The example app also has platform directories again, so `flutter run` works on
+a fresh clone without `flutter create .` first.
+
 **A runaway-robot fix, and the reason for the minor bump.** The teleop widgets
 buffered motion commands while the link was down and replayed them on
 reconnect — so a stalled link meant the robot was handed seconds of stale

@@ -127,11 +127,31 @@ final class Ros2Client {
     this.defaultCompression = Compression.cbor,
     this.statusLevel = StatusLevel.warning,
     this.sendSetLevel = false,
+    this.protocols,
     RosTransport Function(Uri uri)? transportFactory,
-  }) : _transportFactory = transportFactory ?? WebSocketTransport.new;
+  }) : _transportFactory = transportFactory ??
+            ((uri) => WebSocketTransport(uri, protocols: protocols));
 
   final Uri uri;
   final ReconnectPolicy reconnectPolicy;
+
+  /// WebSocket subprotocols offered during the handshake.
+  ///
+  /// rosbridge itself ignores them, so this is not a rosbridge feature: it is
+  /// the one way a browser can put a credential on a WebSocket handshake, and
+  /// the usual way an authenticating reverse proxy in front of a bridge reads
+  /// one. `Sec-WebSocket-Protocol` is the only request header the browser
+  /// WebSocket API lets a page set.
+  ///
+  /// **rosbridge has no authentication of its own.** The `auth` opcode in the
+  /// protocol document is a ROS 1 feature backed by `rosauth`, and it was
+  /// removed from `rosbridge_suite` for ROS 2 — `rosbridge_library` 2.0.7
+  /// registers no `auth` capability and the launch file has no `authenticate`
+  /// argument, so a bridge answers `Unknown operation: auth` on the robot's
+  /// own console and the client never hears about it. Anything that
+  /// authenticates a ROS 2 bridge sits in front of it, which is what this and
+  /// a token in [uri]'s query are for.
+  final Iterable<String>? protocols;
 
   /// Wire encoding used for subscriptions that do not override it.
   ///
@@ -172,6 +192,7 @@ final class Ros2Client {
   var _idCounter = 0;
   int _reconnectAttempt = 0;
   Timer? _reconnectTimer;
+  DateTime? _nextRetryAt;
   DateTime? _connectedAt;
   Completer<void>? _connecting;
 
@@ -236,6 +257,81 @@ final class Ros2Client {
   }
 
   bool get isConnected => _state == RosConnectionState.connected;
+
+  /// How many reconnect attempts have been made since the link was last
+  /// stable, as defined by [ReconnectPolicy.stabilityWindow]. Zero while
+  /// connected and healthy.
+  int get reconnectAttempt => _reconnectAttempt;
+
+  /// When the next reconnect attempt fires, or `null` if none is scheduled.
+  ///
+  /// The delay grows with [ReconnectPolicy.backoffFactor], so "reconnecting"
+  /// on its own tells an operator nothing about whether the next try is in
+  /// half a second or half a minute. This is what a countdown is drawn from.
+  DateTime? get nextRetryAt =>
+      (_reconnectTimer?.isActive ?? false) ? _nextRetryAt : null;
+
+  /// Completes once the connection is up.
+  ///
+  /// [connect] completes when the *first* attempt succeeds and throws when it
+  /// fails; it is the retry loop that actually brings a robot link up, and
+  /// its success is only observable on [states]. So the shape an app wants —
+  /// "wait until this is usable" — is this, not `connect()`:
+  ///
+  /// ```dart
+  /// unawaited(ros.connect());
+  /// await ros.waitUntilConnected(timeout: const Duration(seconds: 20));
+  /// ```
+  ///
+  /// Returns immediately if already connected. Throws a [TimeoutException]
+  /// when [timeout] elapses, and a [StateError] if the client is closed
+  /// first, or if the retry loop gives up because
+  /// [ReconnectPolicy.maxAttempts] is exhausted — with the default policy it
+  /// retries forever, so pass a [timeout] rather than relying on that.
+  Future<void> waitUntilConnected({Duration? timeout}) async {
+    if (isConnected) return;
+    if (_state == RosConnectionState.closed) {
+      throw StateError('Client is closed; construct a new Ros2Client.');
+    }
+
+    final completer = Completer<void>();
+    // `states` replays the current state on listen, so a client that connects
+    // between the checks above and this line still completes.
+    final sub = states.listen((state) {
+      if (completer.isCompleted) return;
+      switch (state) {
+        case RosConnectionState.connected:
+          completer.complete();
+        case RosConnectionState.closed:
+          completer.completeError(
+              StateError('Client was closed while waiting to connect.'));
+        case RosConnectionState.disconnected when _gaveUp:
+          completer.completeError(
+              StateError('Gave up connecting to $uri after $_reconnectAttempt '
+                  'attempt(s); ReconnectPolicy.maxAttempts is '
+                  '${reconnectPolicy.maxAttempts}.'));
+        case _:
+          break;
+      }
+    });
+
+    try {
+      await (timeout == null
+          ? completer.future
+          : completer.future.timeout(timeout));
+    } finally {
+      // Nothing else completes `completer`, so a timed-out wait leaves it
+      // pending rather than raising an unhandled error later.
+      await sub.cancel();
+    }
+  }
+
+  /// Whether the retry loop has stopped for good rather than between tries.
+  bool get _gaveUp =>
+      _state == RosConnectionState.disconnected &&
+      _connecting == null &&
+      !(_reconnectTimer?.isActive ?? false) &&
+      !reconnectPolicy.shouldRetry(_reconnectAttempt);
 
   /// Client-side diagnostics: connection errors, malformed frames, dropped
   /// fragments, buffer overflows.
@@ -622,7 +718,8 @@ final class Ros2Client {
   /// kind — rosbridge does not report unroutable goals — so [timeout] is the
   /// only thing standing between that and a future that never completes.
   /// It defaults to `null` because real goals legitimately run for minutes;
-  /// set it for anything that should be bounded.
+  /// set it for anything that should be bounded. `probeBridge()` answers
+  /// whether this bridge supports actions at all, before a goal hangs.
   GoalHandle<Feedback, Result> sendGoal<Goal, Feedback, Result>(
     String actionName,
     Goal goal, {
@@ -844,6 +941,7 @@ final class Ros2Client {
     _setState(RosConnectionState.reconnecting);
     final delay = reconnectPolicy.delayFor(_reconnectAttempt);
     _reconnectAttempt++;
+    _nextRetryAt = DateTime.now().add(delay);
     _reconnectTimer = Timer(delay, () {
       if (_state == RosConnectionState.closed) return;
       connect().catchError((Object error) {

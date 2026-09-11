@@ -42,7 +42,7 @@ class ControlPanel extends StatelessWidget {
         actions: const [
           Padding(
             padding: EdgeInsets.only(right: 12),
-            child: Center(child: _ConnectionChip()),
+            child: Center(child: RosConnectionStatus()),
           ),
         ],
       ),
@@ -77,33 +77,6 @@ class ControlPanel extends StatelessWidget {
           );
         },
       ),
-    );
-  }
-}
-
-class _ConnectionChip extends StatelessWidget {
-  const _ConnectionChip();
-
-  @override
-  Widget build(BuildContext context) {
-    return RosConnectionBuilder(
-      builder: (context, state) {
-        final (color, label) = switch (state) {
-          RosConnectionState.connected => (Colors.green, 'Connected'),
-          RosConnectionState.connecting => (Colors.amber, 'Connecting'),
-          RosConnectionState.reconnecting => (Colors.orange, 'Reconnecting'),
-          RosConnectionState.disconnected => (Colors.red, 'Offline'),
-          RosConnectionState.closed => (Colors.grey, 'Closed'),
-        };
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.circle, size: 10, color: color),
-            const SizedBox(width: 6),
-            Text(label),
-          ],
-        );
-      },
     );
   }
 }

@@ -11,7 +11,12 @@ Object? sink;
 
 Future<void> main() async {
   registerStandardMessages();
-  final ros = Ros2Client(Uri.parse('wss://robot.example:9090'));
+  // protocols: the browser's only handshake header, so it has to compile here.
+  final ros = Ros2Client(Uri.parse('wss://robot.example:9090'),
+      protocols: const ['rosbridge.v1']);
+  sink = ros.waitUntilConnected(timeout: const Duration(seconds: 5));
+  sink = ros.probeBridge();
+  sink = ros.nextRetryAt;
   sink = ros.subscribe<LaserScan>('/scan',
       qos: QosProfile.sensorData,
       compression: Compression.cbor,

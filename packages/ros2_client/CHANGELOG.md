@@ -34,9 +34,40 @@ Initial release.
 
 A minor bump rather than a patch, because pub reads `^0.1.0` as
 `>=0.1.0 <0.2.0`: shipping these as 0.1.1 would hand them to every existing
-user automatically, and several change behaviour that correct-looking code
-depends on. They are all bug fixes — the old behaviour was wrong — but wrong
+user automatically, and several of these change behaviour that correct-looking
+code depends on. Most are bug fixes — the old behaviour was wrong — but wrong
 in ways a caller may have built around.
+
+**New**
+
+* `waitUntilConnected({timeout})`. `connect()` reports the *first* attempt and
+  throws when it fails, but on a robot link it is usually the retry loop that
+  gets you connected, and its success was observable only on `states` — so
+  every caller wrote the same `states.firstWhere(...)`. Throws a
+  `TimeoutException` on the timeout, and a `StateError` if the client closes
+  or `ReconnectPolicy.maxAttempts` runs out first, rather than waiting on a
+  client that has stopped trying.
+* `nextRetryAt` and `reconnectAttempt`, because the backoff doubles: a UI
+  showing "reconnecting" could not tell an operator whether the next attempt
+  was a second or half a minute away.
+* `probeBridge()` returns a `BridgeInfo` — ROS version, distro, and whether
+  the bridge is new enough for ROS 2 actions. A pre-2.0.0 bridge answers a
+  goal with nothing at all and logs the unknown operation on the robot's own
+  console, so without this `sendGoal` just never completes. Support is read
+  from `/rosapi/services` rather than by calling `/rosapi/action_servers`:
+  with the default `call_services_in_new_thread:=false` and
+  `default_call_service_timeout:=0.0`, calling a service that does not exist
+  parks the bridge's only queue thread for the life of the connection, so a
+  probe that called it could wedge the link it was checking.
+* `Ros2Client(protocols: [...])` offers WebSocket subprotocols on the
+  handshake. **rosbridge itself has no authentication**: the `auth` opcode is
+  a ROS 1 feature backed by `rosauth`, which was never ported — 2.0.7
+  registers no `auth` capability, and a bridge sent one answers `Unknown
+  operation: auth` on the robot's console and nothing whatsoever to the
+  client. Anything that authenticates a ROS 2 bridge therefore sits in front
+  of it, and a subprotocol is the only handshake header a browser can set.
+  Verified against 2.0.7: the bridge selects no subprotocol and accepts the
+  connection, and traffic flows normally.
 
 **Behaviour that changes**
 
@@ -143,3 +174,5 @@ subscription.
 
 Also: `wss://` verified against a TLS bridge, including certificate pinning
 for the self-signed case; CI added; the tree is now `dart format` clean.
+`example/real_connection_check.dart` covers the connection-level additions
+against a real bridge — 6/6 against rosbridge 2.0.7 on Humble.
