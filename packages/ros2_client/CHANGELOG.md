@@ -30,7 +30,7 @@ Initial release.
   graph-wide queries actually are
 - `std_msgs`, `geometry_msgs`, `sensor_msgs` and `nav_msgs` core types
 
-## 0.2.0 (unreleased)
+## 0.2.0
 
 A minor bump rather than a patch, because pub reads `^0.1.0` as
 `>=0.1.0 <0.2.0`: shipping these as 0.1.1 would hand them to every existing

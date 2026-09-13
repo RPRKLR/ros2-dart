@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.2.0
 
 Requires `ros2_client` 0.2.0: the regenerated code uses the key-aware field
 decoders added there, so absent fields take the defaults their definitions
