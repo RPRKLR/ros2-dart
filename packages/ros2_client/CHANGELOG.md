@@ -13,6 +13,14 @@
   rosbridge sends the exception text, which the message now includes.
   A result that arrives but cannot be decoded says so in the message too,
   rather than leaving `result` null without explanation.
+* A message or list where a scalar belongs decoded as `0`, `false` or `''`,
+  and a scalar where a message belongs as an all-default message. Both now
+  throw `FormatException`. Neither is a quirk of the wire encoding; they mean
+  the robot's definitions differ from the generated class's. Jazzy's
+  `FollowWaypoints` reports missed waypoints as messages where Humble's has
+  integers, and a Humble class read them as a list of plausible, wrong
+  indices. `null`, numeric strings and ints for doubles still decode as
+  before.
 
 ## 0.2.0
 

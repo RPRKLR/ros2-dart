@@ -52,6 +52,7 @@ abstract final class Field {
         final double d => d,
         final int i => i.toDouble(),
         final String s => double.tryParse(s) ?? double.nan,
+        Map() || List() => throw _notScalar('a number', v),
         _ => 0.0,
       };
 
@@ -59,12 +60,31 @@ abstract final class Field {
         final int i => i,
         final double d => d.toInt(),
         final String s => int.tryParse(s) ?? 0,
+        Map() || List() => throw _notScalar('an integer', v),
         _ => 0,
       };
 
-  static bool asBool(Object? v) => v == true || v == 1;
+  static bool asBool(Object? v) => switch (v) {
+        Map() || List() => throw _notScalar('a bool', v),
+        _ => v == true || v == 1,
+      };
 
-  static String asString(Object? v) => v is String ? v : (v?.toString() ?? '');
+  static String asString(Object? v) => switch (v) {
+        final String s => s,
+        Map() || List() => throw _notScalar('a string', v),
+        _ => v?.toString() ?? '',
+      };
+
+  /// A message or array where a scalar belongs is never a quirk of the wire
+  /// encoding: the definitions on the two ends differ. Jazzy's
+  /// `FollowWaypoints` reports missed waypoints as messages where Humble's
+  /// has integers, and decoding each as `0` handed back plausible, wrong
+  /// indices.
+  static FormatException _notScalar(String expected, Object? v) =>
+      FormatException(
+          'Expected $expected, got a ${v is Map ? 'message' : 'list'}. '
+          'The message definitions on the robot differ from the ones this '
+          'class was generated from.');
 
   /// Decodes a ROS `uint8[]` field.
   ///
@@ -184,12 +204,18 @@ abstract final class Field {
   /// Decodes a nested message, tolerating a missing field.
   ///
   /// An absent message decodes from an empty map, so every field falls back to
-  /// the default its `.msg` declares — which is why [doubleAt] takes one.
+  /// the default its `.msg` declares — which is why [doubleAt] takes one. A
+  /// value that is present but not a message throws, as [asList] does: it
+  /// means the definitions differ, not that the field is missing.
   static T asMessage<T>(Object? v, T Function(Map<String, Object?>) from) =>
       from(switch (v) {
         final Map<String, Object?> m => m,
         final Map<Object?, Object?> m => m.cast<String, Object?>(),
-        _ => const {},
+        null => const {},
+        _ => throw FormatException(
+            'Expected a message, got ${v.runtimeType}. The message '
+            'definitions on the robot differ from the ones this class was '
+            'generated from.'),
       });
 
   /// Encodes a `uint8[]` for the JSON wire form.
