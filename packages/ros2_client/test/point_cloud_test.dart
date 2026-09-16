@@ -30,7 +30,9 @@ PointCloud2 xyzCloud(int count,
       PointField(name: 'y', offset: 4, datatype: PointField.float32),
       PointField(name: 'z', offset: 8, datatype: PointField.float32),
     ],
-    data: truncateTo == null ? bytes : Uint8List.sublistView(bytes, 0, truncateTo),
+    data: truncateTo == null
+        ? bytes
+        : Uint8List.sublistView(bytes, 0, truncateTo),
   );
 }
 
@@ -95,7 +97,8 @@ void main() {
         pointStep: 20,
         fields: const [
           PointField(name: 'x', offset: 0, datatype: PointField.float32),
-          PointField(name: 'intensity', offset: 16, datatype: PointField.uint16),
+          PointField(
+              name: 'intensity', offset: 16, datatype: PointField.uint16),
         ],
         data: bytes,
       );
@@ -178,8 +181,8 @@ void main() {
           ],
           data: Uint8List(8),
         ).reader(),
-        throwsA(isA<PointCloudFormatException>().having(
-            (e) => e.message, 'message', contains('spans bytes'))),
+        throwsA(isA<PointCloudFormatException>()
+            .having((e) => e.message, 'message', contains('spans bytes'))),
       );
     });
 
@@ -191,8 +194,8 @@ void main() {
           fields: const [PointField(name: 'x', offset: 0, datatype: 99)],
           data: Uint8List(8),
         ).reader(),
-        throwsA(isA<PointCloudFormatException>().having(
-            (e) => e.message, 'message', contains('datatype 99'))),
+        throwsA(isA<PointCloudFormatException>()
+            .having((e) => e.message, 'message', contains('datatype 99'))),
       );
     });
 
@@ -210,7 +213,8 @@ void main() {
         width: 1,
         pointStep: 4,
         fields: const [
-          PointField(name: 'intensity', offset: 0, datatype: PointField.float32),
+          PointField(
+              name: 'intensity', offset: 0, datatype: PointField.float32),
         ],
         data: Uint8List(4),
       );
@@ -250,6 +254,99 @@ void main() {
       registerStandardMessages();
       expect(MessageRegistry.of<PointCloud2>().rosType,
           'sensor_msgs/msg/PointCloud2');
+    });
+  });
+
+  group('organised clouds with row padding', () {
+    test('honours row_step instead of assuming a flat run of points', () {
+      // 2 rows of 2 points, 12-byte points, 32-byte rows: 8 bytes of padding
+      // after each row. Depth cameras really do pad like this.
+      const pointStep = 12;
+      const rowStep = 32;
+      final bytes = Uint8List(2 * rowStep);
+      final view = ByteData.sublistView(bytes);
+      var n = 1;
+      for (var row = 0; row < 2; row++) {
+        for (var col = 0; col < 2; col++) {
+          final at = row * rowStep + col * pointStep;
+          view.setFloat32(at, n.toDouble(), Endian.little);
+          view.setFloat32(at + 4, n.toDouble(), Endian.little);
+          view.setFloat32(at + 8, n.toDouble(), Endian.little);
+          n++;
+        }
+      }
+      final cloud = PointCloud2(
+        height: 2,
+        width: 2,
+        pointStep: pointStep,
+        rowStep: rowStep,
+        fields: const [
+          PointField(name: 'x', offset: 0, datatype: PointField.float32),
+          PointField(name: 'y', offset: 4, datatype: PointField.float32),
+          PointField(name: 'z', offset: 8, datatype: PointField.float32),
+        ],
+        data: bytes,
+      );
+
+      // Reading point i at i * point_step walks into the padding and shifts
+      // every point after the first row.
+      expect(cloud.reader().xyz(), [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]);
+      expect(cloud.reader().readFloat('x', 3), 4.0);
+    });
+
+    test('an unpadded organised cloud is unaffected', () {
+      final bytes = Uint8List(4 * 12);
+      final view = ByteData.sublistView(bytes);
+      for (var i = 0; i < 4; i++) {
+        view.setFloat32(i * 12, (i + 1).toDouble(), Endian.little);
+      }
+      final cloud = PointCloud2(
+        height: 2,
+        width: 2,
+        pointStep: 12,
+        rowStep: 24, // exactly width * point_step
+        fields: const [
+          PointField(name: 'x', offset: 0, datatype: PointField.float32),
+        ],
+        data: bytes,
+      );
+      expect(cloud.reader().readFloat('x', 3), 4.0);
+    });
+  });
+
+  group('decode defaults and equality', () {
+    test('an absent height and is_dense fall back to the real defaults', () {
+      final cloud = PointCloud2.fromJson(const {'point_step': 1});
+      // height 0 would make every point unreadable, and is_dense false would
+      // claim invalid points that are not there.
+      expect(cloud.height, 1);
+      expect(cloud.isDense, isTrue);
+    });
+
+    test('PointCloud2 is a value type, as RosMessage promises', () {
+      final a = PointCloud2(
+          width: 1, pointStep: 4, data: Uint8List.fromList([1, 2, 3, 4]));
+      final b = PointCloud2(
+          width: 1, pointStep: 4, data: Uint8List.fromList([1, 2, 3, 4]));
+      final c = PointCloud2(
+          width: 1, pointStep: 4, data: Uint8List.fromList([1, 2, 3, 5]));
+
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      expect(a, isNot(c));
+    });
+
+    test('TFMessage is a value type too', () {
+      final a =
+          TFMessage(transforms: [const RosTransformStamped(childFrameId: 'b')]);
+      final b =
+          TFMessage(transforms: [const RosTransformStamped(childFrameId: 'b')]);
+      final c =
+          TFMessage(transforms: [const RosTransformStamped(childFrameId: 'c')]);
+
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      expect(a, isNot(c));
     });
   });
 }

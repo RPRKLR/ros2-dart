@@ -213,17 +213,33 @@ frames into one rebuild; an update that leaves the transform unchanged does
 not rebuild at all. An earlier post-frame-callback throttle was removed — it
 added a second frame of latency and bought nothing.
 
-Still owed here: `TfBuffer` is only exercised against synthetic transforms.
-A real robot's tf tree — dozens of frames, static and dynamic mixed, clocks
-that jump on `/clock` — is unverified.
+### Verified against a real tf tree ✅
 
-## Audit, 2026-09-10 — what four parallel reviews found
+Done 2026-09-10. `example/real_tf_check.dart` runs against a ROS node
+broadcasting `map -> odom -> base_link` at 50 Hz plus three *independent*
+static broadcasters (`laser`, `camera`, `imu`), which is the shape a real
+robot has: a URDF publisher and one per sensor driver. 10/10 checks pass —
+every static frame arrives, the buffer fills to 102 samples, a three-level
+chain composes through a static leaf to the millimetre, and interpolation at a
+past timestamp resolves.
 
-Four agents audited the client core, the Flutter widgets, the generator, and
-one specific risk class: *the bridge accepts a request and then delivers
-nothing, with no error on either side*. That class had already produced three
-shipped bugs. Everything below was verified against rosbridge 2.0.7's Python
-or reproduced through the generator before being fixed.
+**It also proved the QoS fix was load-bearing.** Reverting to the previous
+profiles — `sensorData` on `/tf`, depth-1 transient-local on `/tf_static` —
+makes `laser` and `camera` **never arrive at all**; only `imu`, the last
+broadcaster to publish, survives the one-deep queue. Anything looking those
+frames up throws "does not exist in the tf tree". That was shipped in 0.1.0,
+and it would hit every robot with more than one static broadcaster, which is
+every robot.
+
+Still owed: a clock that jumps on `/clock` is still unexercised.
+
+## Audit, 2026-09-10 — what the review pass found
+
+The client core, the Flutter widgets and the generator were each audited in
+full, alongside one specific risk class: *the bridge accepts a request and
+then delivers nothing, with no error on either side*. That class had already
+produced three shipped bugs. Everything below was verified against rosbridge
+2.0.7's Python or reproduced through the generator before being fixed.
 
 ### The fakes were inventing capabilities
 
@@ -296,9 +312,9 @@ it work, which is why it would have looked intermittent.
   messages. The parameter is renamed when a field would capture it.
 - A constant named `FROM_JSON` collided with the generated factory.
 
-### The widget audit found a runaway robot
+### The widget layer had a runaway robot in it
 
-The worst bug of the four audits, and the reason the teleop widgets now
+The worst bug the pass turned up, and the reason the teleop widgets now
 advertise `perishable: true`.
 
 `Timer.periodic` repeated the held command unconditionally, and every repeat
@@ -314,7 +330,7 @@ same way in exactly the situation where it matters most.
 reproduces the full sequence — drop, hold, release, reconnect — and fails
 without the flag.
 
-Two more from the same audit, both reproduced:
+Two more in the same widgets, both reproduced:
 
 **Teleop never rebound.** `_publisher ??=` meant a robot selector that swapped
 `topic` kept driving the old robot while the UI named the new one, and a
@@ -434,6 +450,10 @@ largest single chunk of work left.
 
 ## v0.6 — Flutter polish
 
+- ✅ `RosConnectionStatus`: the status dot every robot UI grows, counting down
+  to the next retry rather than saying "reconnecting" at an operator who
+  cannot tell a second from half a minute. Landed early because the example
+  app had already hand-rolled a worse version of it.
 - Occupancy grid / map widget with pan, zoom and pose overlay
 - 2D nav goal picker that sends a `NavigateToPose` action
 - Diagnostics panel driven by `diagnostic_msgs`
@@ -443,9 +463,28 @@ largest single chunk of work left.
 
 ## v1.0 — Production readiness
 
-- Security: TLS (`wss://`), token auth via the rosbridge `auth` opcode,
-  documented reverse-proxy setup. `wss://` should already work through
-  `web_socket_channel`, but is untested against a TLS bridge.
+- ✅ TLS (`wss://`), verified against `rosbridge_suite` launched with
+  `ssl:=true`. A CA-signed certificate needs nothing. A **self-signed** one —
+  what almost every robot on a private network has — fails with
+  `CERTIFICATE_VERIFY_FAILED`, and the fix is to pin it through a
+  `SecurityContext` supplied via the existing `channelFactory` hook, rather
+  than to disable verification. `example/secure_connection.dart` is runnable
+  and both paths were exercised. No new API was needed; the gap was that
+  nothing said so.
+- ✅ Token auth. **There is nothing to implement in the client, and the
+  roadmap item as written was wrong.** The `auth` opcode is still in the
+  protocol document, but authentication was backed by `rosauth`, which was
+  never released for ROS 2, and the capability was dropped from
+  `rosbridge_suite` on that branch: 2.0.7 registers no `auth` capability and
+  `rosbridge_websocket_launch.xml` has no `authenticate` argument. Sent one
+  anyway, the installed bridge logs `Unknown operation: auth. Allowed
+  operations: [...]` on the robot's own console and returns the client
+  nothing — the same invisible-failure shape as `set_level`. So anything
+  authenticating a ROS 2 bridge is in front of it, and the client's job is to
+  carry a credential there: `Ros2Client(protocols: [...])` for the one
+  handshake header a browser can set, or the URI query. Verified against
+  2.0.7, which selects no subprotocol and accepts the connection anyway.
+- A documented reverse-proxy setup is still owed.
 - Web support verified *at runtime* in a browser. Compile-time is done, under
   both dart2js and WASM.
 - Reconnect/offline semantics documented with a state diagram
@@ -454,31 +493,44 @@ largest single chunk of work left.
 
 ---
 
-## Before the first publish
+## Publishing
+
+0.1.0 is on pub.dev, all three packages. 0.2.0 is pushed, not yet published.
 
 - ✅ Repository URL set in all three pubspecs.
 - ✅ `LICENSE` present (BSD-3-Clause, matching ROS convention).
-- ✅ `dart pub publish --dry-run` on `ros2_client`: **0 warnings**.
 - ✅ Web verified at compile time: the full public surface — CBOR, TF,
   `PointCloudReader`, introspection, backpressure — compiles under both
   `dart compile js` and `dart compile wasm`. Nothing in `lib/` imports
   `dart:io`. Runtime verification in a browser is still owed.
-- [ ] **Re-check the names on pub.dev.** `ros2_client`, `ros2_flutter` and
-      `ros2_msgs_common` were free when this was written. Names and version
-      numbers are permanent once taken.
-- [ ] **Publish `ros2_client` first.** The other two depend on it and cannot go
-      until it exists.
-- [ ] **Then drop the `dependency_overrides`** from `ros2_flutter` and
-      `ros2_msgs_common` and publish those, in that order.
-- [ ] **Dry-run the other two**, which has only been done for `ros2_client`.
+- ✅ `dependency_overrides` dropped; the other two now depend on a published
+  `ros2_client`. Local development runs on gitignored `pubspec_overrides.yaml`
+  files, recreated by `tool/link_local.sh`.
 
-## No CI yet
+For 0.2.0, in this order — the constraint is the same one 0.1.0 had:
 
-Everything above — 247 tests, the real-bridge harness, the wire benchmark, the
-byte-identical regeneration of `ros2_msgs_common`, the web and WASM compiles —
-runs only when someone runs it. Every serious bug this project has had was
-found by *running* something rather than reading it, which is the argument for
-automating exactly these.
+- [x] **Dry-run all three.** Clean apart from the hint that
+      `pubspec_overrides.yaml` is in use.
+- [ ] **CI green on GitHub**, then merge to `main`: pub.dev resolves the
+      README's relative links and GIFs against the repository's default
+      branch, so `main` has to carry the 0.2.0 docs before the pages go live.
+- [ ] **Publish `ros2_client` 0.2.0 first.** The other two already declare
+      `ros2_client: ^0.2.0`, so neither resolves from pub until it is up.
+- [ ] **Then `ros2_msgs_common`, then `ros2_flutter`**, with the overrides
+      removed (`rm packages/*/pubspec_overrides.yaml`) so they resolve the
+      published `ros2_client`. `tool/link_local.sh` puts them back.
+
+## CI
+
+`.github/workflows/ci.yml` runs format, analyze and the tests for all three
+packages (the end-to-end suite against a local Tornado rosbridge), the web and
+WASM compiles, and the publish dry-runs, with the dependents built against the
+sibling `ros2_client`. Its first run on GitHub caught two things the local runs
+could not: the gitignored path overrides, and GIF-frame goldens that exist only
+on the machine that rendered them.
+
+Still manual: the real-bridge harness, the wire benchmark, and the
+byte-identical regeneration of `ros2_msgs_common`.
 
 ## Validation against a real bridge ✅
 
@@ -498,6 +550,20 @@ Covered: topic/node/action-server introspection, typed and custom-message
 subscription, publishing (the turtle actually moves), services, an action goal
 with live feedback, parameter read/write, best-effort QoS, and server-side
 throttling.
+
+### Connection-level checks ✅
+
+Done 2026-09-11, `example/real_connection_check.dart`, 6/6 against a bare
+rosbridge 2.0.7 — no robot fixtures needed. It covers `waitUntilConnected`
+completing on a retry rather than the first attempt, `probeBridge` reading ROS
+version, distro and action support out of `rosapi`, and the one question about
+the credential path that no fake could answer: **rosbridge accepts a handshake
+that offers subprotocols**, selects none of them, and carries traffic normally.
+
+Sending the `auth` opcode was checked the same way, and the finding is the
+reason that feature became documentation instead of code: the bridge logs
+`Unknown operation: auth. Allowed operations: [...]` — `auth` is not among
+them — and returns the client nothing at all.
 
 ### What real hardware caught that the fake bridge did not
 
@@ -525,7 +591,12 @@ glob.
 
 ## Still owed
 
-- Web/WASM verification in CI.
+- Runtime verification in a browser. Compiling is covered — the CI web job
+  builds the whole public surface under both dart2js and WASM, and all three
+  packages carry `platform:web` and `is:wasm-ready` on pub.dev — but nothing
+  has yet opened a socket to a bridge from a browser.
+- CI itself has never executed: every job was run locally, step by step, but
+  the workflow has not run on GitHub because nothing is pushed yet.
 
 ## Large messages, verified against a real bridge ✅
 
@@ -601,7 +672,12 @@ accident.
 - **ROS 2 actions require `rosbridge_suite` >= 2.0.0** (October 2024). Earlier
   versions reject `send_action_goal` as an unknown operation. Humble's current
   apt package is 2.0.7, so it is fine — but users on older pinned versions
-  will hit this. Consider probing `rosapi/get_ros_version` on connect and
-  surfacing a clear warning.
+  will hit this. ✅ `probeBridge()` answers it on demand: `/rosapi/services`
+  lists `/rosapi/action_servers` only on 2.0.0 and later. Not run on connect,
+  and not answered by calling that service — with the default
+  `call_services_in_new_thread:=false` and `default_call_service_timeout:=0.0`
+  a call to a service that does not exist parks the bridge's only queue thread
+  for the life of the connection, so the probe would wedge the link it was
+  diagnosing.
 - The bundled messages target ROS 2 (`pkg/msg/Type` naming). ROS 1 short names
   are accepted as registry aliases but ROS 1 is not a support target.

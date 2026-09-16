@@ -31,8 +31,8 @@ final class _Fake implements RosTransport {
       // WireCodec, not jsonEncode: a scan contains `inf` for an out-of-range
       // beam and jsonEncode throws on it outright. WireCodec writes null,
       // which is exactly what a real bridge puts on the wire.
-      _incoming.add(
-          WireCodec.encode({'op': 'publish', 'topic': topic, 'msg': msg}));
+      _incoming
+          .add(WireCodec.encode({'op': 'publish', 'topic': topic, 'msg': msg}));
 }
 
 /// Real glyphs instead of the test framework's placeholder boxes.
@@ -125,8 +125,8 @@ void main() {
     addTearDown(f.client.close);
     // 4.5 m fills the plot with a 6x4 m room rather than a dot in a
     // 10 m grid.
-    await tester.pumpWidget(
-        frame(f.client, const RosLaserScanView(maxRange: 4.5)));
+    await tester
+        .pumpWidget(frame(f.client, const RosLaserScanView(maxRange: 4.5)));
     await tester.pump();
     f.transport.publish('/scan', roomScan());
     await tester.pump();
@@ -139,8 +139,8 @@ void main() {
   testWidgets('teleop joystick', (tester) async {
     final f = fake();
     addTearDown(f.client.close);
-    await tester.pumpWidget(
-        frame(f.client, const TeleopJoystick(size: 300), width: 340, height: 340));
+    await tester.pumpWidget(frame(f.client, const TeleopJoystick(size: 300),
+        width: 340, height: 340));
     await tester.pump();
     // Held, not dragged: a completed drag releases, and release recentres the
     // knob, which would show the widget in its resting state instead.

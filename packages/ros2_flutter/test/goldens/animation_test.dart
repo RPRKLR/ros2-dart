@@ -124,7 +124,8 @@ void main() {
       // A slow loop around the room.
       final x = 1.4 * math.sin(2 * math.pi * t);
       final y = 0.9 * math.sin(4 * math.pi * t);
-      transport.publish('/scan', scanFrom(x, y, 0.5 * math.sin(2 * math.pi * t)));
+      transport.publish(
+          '/scan', scanFrom(x, y, 0.5 * math.sin(2 * math.pi * t)));
       await tester.pump();
       await tester.pump();
       await expectLater(find.byType(RosLaserScanView),

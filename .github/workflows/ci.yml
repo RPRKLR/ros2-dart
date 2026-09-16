@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [main, devel, 'v*']
+  pull_request:
+    branches: [main, devel]
+
+# A push that supersedes an in-flight run makes that run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dart:
+    name: ros2_client / ros2_msgs_common
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      # The packages are versioned together, so a dependent can require a
+      # ros2_client that is not on pub.dev yet. The overrides are gitignored;
+      # without this step CI resolves the published version and fails.
+      - name: Build against the sibling ros2_client
+        run: ./tool/link_local.sh
+
+      - name: ros2_client — install
+        working-directory: packages/ros2_client
+        run: dart pub get
+
+      - name: ros2_client — format
+        working-directory: packages/ros2_client
+        run: dart format --output=none --set-exit-if-changed lib test bin example benchmark
+
+      - name: ros2_client — analyze
+        working-directory: packages/ros2_client
+        run: dart analyze --fatal-infos
+
+      # The end-to-end tests spawn a local Tornado server speaking the
+      # rosbridge protocol. Without it they skip themselves, which would let a
+      # protocol regression through unnoticed — so install it rather than
+      # relying on the skip.
+      - name: Tornado, for the end-to-end suite
+        run: pip install tornado
+
+      - name: ros2_client — test
+        working-directory: packages/ros2_client
+        run: dart test
+
+      - name: ros2_msgs_common — install
+        working-directory: packages/ros2_msgs_common
+        run: dart pub get
+
+      - name: ros2_msgs_common — analyze
+        working-directory: packages/ros2_msgs_common
+        run: dart analyze --fatal-infos
+
+      - name: ros2_msgs_common — test
+        working-directory: packages/ros2_msgs_common
+        run: dart test
+
+  flutter:
+    name: ros2_flutter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      # The packages are versioned together, so a dependent can require a
+      # ros2_client that is not on pub.dev yet. The overrides are gitignored;
+      # without this step CI resolves the published version and fails.
+      - name: Build against the sibling ros2_client
+        run: ./tool/link_local.sh
+
+      - working-directory: packages/ros2_flutter
+        run: flutter pub get
+
+      - name: format
+        working-directory: packages/ros2_flutter
+        run: dart format --output=none --set-exit-if-changed lib test example
+
+      - name: analyze
+        working-directory: packages/ros2_flutter
+        run: flutter analyze --fatal-infos
+
+      # Includes test/goldens/render_test.dart, which fails if a widget's
+      # rendered output drifts from the committed screenshots. Excludes the
+      # animation frames: they only feed the README GIFs, and are gitignored,
+      # so there is nothing in a checkout to compare them against.
+      - name: test
+        working-directory: packages/ros2_flutter
+        run: flutter test --exclude-tags animation
+
+  web:
+    name: Web and WASM compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      # The package claims to run in the browser. This is what makes that
+      # claim testable: a stray dart:io import anywhere in the library breaks
+      # both of these, and nothing else would catch it.
+      - name: Build a program exercising the public surface
+        run: |
+          mkdir -p /tmp/webcheck/lib
+          cp .github/workflows/web_surface.dart /tmp/webcheck/lib/main.dart
+          cat > /tmp/webcheck/pubspec.yaml <<'EOF'
+          name: webcheck
+          environment:
+            sdk: ^3.6.0
+          dependencies:
+            ros2_client:
+              path: PACKAGE_PATH
+          EOF
+          sed -i "s|PACKAGE_PATH|$GITHUB_WORKSPACE/packages/ros2_client|" /tmp/webcheck/pubspec.yaml
+          cd /tmp/webcheck && dart pub get
+
+      - name: dart compile js
+        run: cd /tmp/webcheck && dart compile js -o /tmp/out.js lib/main.dart
+
+      - name: dart compile wasm
+        run: cd /tmp/webcheck && dart compile wasm -o /tmp/out.wasm lib/main.dart
+
+  publishable:
+    name: Publish dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      # The packages are versioned together, so a dependent can require a
+      # ros2_client that is not on pub.dev yet. The overrides are gitignored;
+      # without this step CI resolves the published version and fails.
+      - name: Build against the sibling ros2_client
+        run: ./tool/link_local.sh
+
+      - working-directory: packages/ros2_client
+        run: dart pub publish --dry-run
+      - working-directory: packages/ros2_msgs_common
+        run: dart pub get && dart pub publish --dry-run

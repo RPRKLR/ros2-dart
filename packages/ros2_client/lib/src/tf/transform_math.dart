@@ -47,23 +47,46 @@ extension QuaternionMath on Quaternion {
   }
 
   /// Roll, pitch and yaw in radians (XYZ fixed-axis, per REP-103).
+  ///
+  /// At a pitch of exactly ±90° the decomposition is degenerate: only
+  /// `yaw - roll` (or `yaw + roll`) is determined, and the usual formulae
+  /// reduce to `atan2` of two values that are both rounding noise. Clamping
+  /// the pitch alone is not enough — it leaves roll and yaw as whatever those
+  /// zeros happened to produce, which measured up to 37 degrees of silent
+  /// error. Straight down is not an exotic pose: it is a mast camera, or a
+  /// depth sensor looking at the floor.
+  ///
+  /// At the singularity this returns `roll = 0` and folds the whole rotation
+  /// into yaw, which is the conventional choice and reconstructs exactly.
   ({double roll, double pitch, double yaw}) get rpy {
-    final sinrCosp = 2 * (w * x + y * z);
-    final cosrCosp = 1 - 2 * (x * x + y * y);
-    final roll = math.atan2(sinrCosp, cosrCosp);
-
     final sinp = 2 * (w * y - z * x);
-    // Clamp: outside [-1, 1] is gimbal lock, where asin is undefined.
-    final pitch = sinp.abs() >= 1
-        ? (sinp.isNegative ? -math.pi / 2 : math.pi / 2)
-        : math.asin(sinp);
 
-    final sinyCosp = 2 * (w * z + x * y);
-    final cosyCosp = 1 - 2 * (y * y + z * z);
-    final yawValue = math.atan2(sinyCosp, cosyCosp);
+    if (sinp.abs() >= 1 - _gimbalEpsilon) {
+      final up = !sinp.isNegative;
+      // With pitch at ±90° the rotation depends only on the combined angle,
+      // so roll is free and taken as zero.
+      return (
+        roll: 0.0,
+        pitch: up ? math.pi / 2 : -math.pi / 2,
+        // Pitch up leaves `yaw - roll` free, pitch down `yaw + roll`; both
+        // recover from the same expression once roll is pinned to zero.
+        yaw: 2 * math.atan2(z, w),
+      );
+    }
 
-    return (roll: roll, pitch: pitch, yaw: yawValue);
+    final roll = math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y));
+    final yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z));
+    return (roll: roll, pitch: math.asin(sinp), yaw: yaw);
   }
+
+  /// How close `sin(pitch)` must get to ±1 before the degenerate branch runs.
+  ///
+  /// Deliberately tiny. The ordinary decomposition stays accurate remarkably
+  /// close to the singularity — a pitch of `pi/2 - 1e-6` still recovers roll
+  /// and yaw to three decimal places — and only collapses when both `atan2`
+  /// arguments round to zero. A wider threshold would throw away good roll and
+  /// yaw for poses that are merely steep.
+  static const double _gimbalEpsilon = 1e-15;
 
   /// Spherical linear interpolation towards [other] by [t] in `0..1`.
   Quaternion slerp(Quaternion other, double t) {
@@ -183,10 +206,22 @@ extension TransformMath on RosTransform {
     final wz = q.w * q.z;
 
     return Float64List.fromList([
-      1 - 2 * (yy + zz), 2 * (xy + wz), 2 * (xz - wy), 0,
-      2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx), 0,
-      2 * (xz + wy), 2 * (yz - wx), 1 - 2 * (xx + yy), 0,
-      translation.x, translation.y, translation.z, 1,
+      1 - 2 * (yy + zz),
+      2 * (xy + wz),
+      2 * (xz - wy),
+      0,
+      2 * (xy - wz),
+      1 - 2 * (xx + zz),
+      2 * (yz + wx),
+      0,
+      2 * (xz + wy),
+      2 * (yz - wx),
+      1 - 2 * (xx + yy),
+      0,
+      translation.x,
+      translation.y,
+      translation.z,
+      1,
     ]);
   }
 

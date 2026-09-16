@@ -94,8 +94,7 @@ abstract final class TypedefParser {
     }
     if (typedef.fieldTypes.length != typedef.fieldNames.length ||
         typedef.fieldArrayLen.length != typedef.fieldNames.length) {
-      throw TypedefException(
-          'Typedef for "${typedef.type}" is inconsistent: '
+      throw TypedefException('Typedef for "${typedef.type}" is inconsistent: '
           '${typedef.fieldNames.length} names, '
           '${typedef.fieldTypes.length} types, '
           '${typedef.fieldArrayLen.length} array lengths');
@@ -162,8 +161,8 @@ abstract final class TypedefParser {
       // SLOT_TYPES, whose value is a Python repr with a memory address in it.
       if (name == _notAConstant || fieldNames.contains(name)) continue;
       final value = typedef.constValues[i];
-      constants.add(
-          ConstantDef(type: inferConstantType(value), name: name, value: value));
+      constants.add(ConstantDef(
+          type: inferConstantType(value), name: name, value: value));
     }
     return constants;
   }

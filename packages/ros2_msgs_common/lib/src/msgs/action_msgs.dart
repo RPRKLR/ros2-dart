@@ -63,7 +63,7 @@ final class GoalStatus implements RosMessage {
 
   factory GoalStatus.fromJson(Map<String, Object?> json) => GoalStatus(
         goalInfo: Field.asMessage(json['goal_info'], GoalInfo.fromJson),
-        status: Field.asInt(json['status']),
+        status: Field.intAt(json, 'status'),
       );
 
   static const int statusUnknown = 0;
@@ -199,7 +199,7 @@ final class CancelGoalResponse implements RosMessage {
 
   factory CancelGoalResponse.fromJson(Map<String, Object?> json) =>
       CancelGoalResponse(
-        returnCode: Field.asInt(json['return_code']),
+        returnCode: Field.intAt(json, 'return_code'),
         goalsCanceling:
             Field.asList<GoalInfo>(json['goals_canceling'], GoalInfo.fromJson),
       );

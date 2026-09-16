@@ -246,14 +246,30 @@ abstract final class DartEmitter {
       return 'Field.asList<$element>(json[$key], $element.fromJson)';
     }
 
-    return switch (scalarDartType(field.type)) {
-      'bool' => 'Field.asBool(json[$key])',
-      'int' => 'Field.asInt(json[$key])',
-      'double' => 'Field.asDouble(json[$key])',
-      'String' => 'Field.asString(json[$key])',
+    // Key-aware, and carrying the default the definition declares. Decoding
+    // by value alone cannot tell an absent field from one rosbridge wrote as
+    // `null` for being non-finite, and it cannot honour a declared default —
+    // so `Quaternion.fromJson({})` used to produce the invalid all-zero
+    // rotation rather than the identity its `.msg` specifies.
+    final scalar = scalarDartType(field.type);
+    final declared = _declaredDefaultLiteral(field, scalar);
+    final extra = declared == null ? '' : ', $declared';
+    return switch (scalar) {
+      'bool' => 'Field.boolAt(json, $key$extra)',
+      'int' => 'Field.intAt(json, $key$extra)',
+      'double' => 'Field.doubleAt(json, $key$extra)',
+      'String' => 'Field.stringAt(json, $key$extra)',
       _ => 'Field.asMessage(json[$key], '
           '${fieldClassName(field.type, resolver)}.fromJson)',
     };
+  }
+
+  /// The literal for a field's declared default, or `null` when it has none
+  /// and the decoder's own fallback will do.
+  static String? _declaredDefaultLiteral(FieldDef field, String? scalar) {
+    final declared = field.defaultValue;
+    if (declared == null || scalar == null || field.isArray) return null;
+    return literal(declared, scalar);
   }
 
   /// The expression that encodes this field back to JSON.

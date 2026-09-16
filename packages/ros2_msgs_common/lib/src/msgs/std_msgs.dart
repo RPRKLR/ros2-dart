@@ -19,7 +19,7 @@ final class Byte implements RosMessage {
   });
 
   factory Byte.fromJson(Map<String, Object?> json) => Byte(
-        data: Field.asInt(json['data']),
+        data: Field.intAt(json, 'data'),
       );
 
   final int data;
@@ -107,7 +107,7 @@ final class Char implements RosMessage {
   });
 
   factory Char.fromJson(Map<String, Object?> json) => Char(
-        data: Field.asInt(json['data']),
+        data: Field.intAt(json, 'data'),
       );
 
   final int data;
@@ -145,7 +145,7 @@ final class Float32 implements RosMessage {
   });
 
   factory Float32.fromJson(Map<String, Object?> json) => Float32(
-        data: Field.asDouble(json['data']),
+        data: Field.doubleAt(json, 'data'),
       );
 
   final double data;
@@ -285,7 +285,7 @@ final class Int16 implements RosMessage {
   });
 
   factory Int16.fromJson(Map<String, Object?> json) => Int16(
-        data: Field.asInt(json['data']),
+        data: Field.intAt(json, 'data'),
       );
 
   final int data;
@@ -425,7 +425,7 @@ final class Int64 implements RosMessage {
   });
 
   factory Int64.fromJson(Map<String, Object?> json) => Int64(
-        data: Field.asInt(json['data']),
+        data: Field.intAt(json, 'data'),
       );
 
   final int data;
@@ -514,7 +514,7 @@ final class Int8 implements RosMessage {
   });
 
   factory Int8.fromJson(Map<String, Object?> json) => Int8(
-        data: Field.asInt(json['data']),
+        data: Field.intAt(json, 'data'),
       );
 
   final int data;
@@ -605,9 +605,9 @@ final class MultiArrayDimension implements RosMessage {
 
   factory MultiArrayDimension.fromJson(Map<String, Object?> json) =>
       MultiArrayDimension(
-        label: Field.asString(json['label']),
-        size: Field.asInt(json['size']),
-        stride: Field.asInt(json['stride']),
+        label: Field.stringAt(json, 'label'),
+        size: Field.intAt(json, 'size'),
+        stride: Field.intAt(json, 'stride'),
       );
 
   /// label of given dimension
@@ -664,7 +664,7 @@ final class MultiArrayLayout implements RosMessage {
       MultiArrayLayout(
         dim: Field.asList<MultiArrayDimension>(
             json['dim'], MultiArrayDimension.fromJson),
-        dataOffset: Field.asInt(json['data_offset']),
+        dataOffset: Field.intAt(json, 'data_offset'),
       );
 
   /// Array of dimension properties
@@ -711,7 +711,7 @@ final class UInt16 implements RosMessage {
   });
 
   factory UInt16.fromJson(Map<String, Object?> json) => UInt16(
-        data: Field.asInt(json['data']),
+        data: Field.intAt(json, 'data'),
       );
 
   final int data;
@@ -800,7 +800,7 @@ final class UInt32 implements RosMessage {
   });
 
   factory UInt32.fromJson(Map<String, Object?> json) => UInt32(
-        data: Field.asInt(json['data']),
+        data: Field.intAt(json, 'data'),
       );
 
   final int data;
@@ -889,7 +889,7 @@ final class UInt64 implements RosMessage {
   });
 
   factory UInt64.fromJson(Map<String, Object?> json) => UInt64(
-        data: Field.asInt(json['data']),
+        data: Field.intAt(json, 'data'),
       );
 
   final int data;
@@ -978,7 +978,7 @@ final class UInt8 implements RosMessage {
   });
 
   factory UInt8.fromJson(Map<String, Object?> json) => UInt8(
-        data: Field.asInt(json['data']),
+        data: Field.intAt(json, 'data'),
       );
 
   final int data;

@@ -27,8 +27,19 @@ abstract final class Op {
   static const fragment = 'fragment';
   static const png = 'png';
   static const status = 'status';
+
   /// Not implemented by rosbridge 2.x; see `Ros2Client.sendSetLevel`.
   static const setLevel = 'set_level';
+
+  /// **Removed from rosbridge for ROS 2**, and so never sent by this client.
+  ///
+  /// The protocol document still specifies it, but authentication was backed
+  /// by `rosauth`, which was never released for ROS 2; `rosbridge_library`
+  /// 2.0.7 registers no `auth` capability and `rosbridge_websocket_launch.xml`
+  /// has no `authenticate` argument. A bridge answers `Unknown operation:
+  /// auth` on the robot's own console, which the client cannot see. Put a
+  /// credential on the handshake with `Ros2Client.protocols` or in the URI
+  /// query, and terminate it in front of the bridge.
   static const auth = 'auth';
 }
 

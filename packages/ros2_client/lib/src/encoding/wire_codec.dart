@@ -37,8 +37,7 @@ abstract final class WireCodec {
   static Map<String, Object?> _decodeCbor(Uint8List frame) {
     final decoded = _fromCbor(cborDecode(frame));
     if (decoded is! Map<String, Object?>) {
-      throw FormatException(
-          'Expected a CBOR map, got ${decoded.runtimeType}');
+      throw FormatException('Expected a CBOR map, got ${decoded.runtimeType}');
     }
     return decoded;
   }

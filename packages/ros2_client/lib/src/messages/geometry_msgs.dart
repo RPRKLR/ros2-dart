@@ -11,9 +11,9 @@ import 'std_msgs.dart';
 final class Vector3 implements RosMessage {
   const Vector3({this.x = 0, this.y = 0, this.z = 0});
   factory Vector3.fromJson(Map<String, Object?> json) => Vector3(
-        x: Field.asDouble(json['x']),
-        y: Field.asDouble(json['y']),
-        z: Field.asDouble(json['z']),
+        x: Field.doubleAt(json, 'x'),
+        y: Field.doubleAt(json, 'y'),
+        z: Field.doubleAt(json, 'z'),
       );
   static const Vector3 zero = Vector3();
   final double x, y, z;
@@ -38,9 +38,9 @@ final class Vector3 implements RosMessage {
 final class Point implements RosMessage {
   const Point({this.x = 0, this.y = 0, this.z = 0});
   factory Point.fromJson(Map<String, Object?> json) => Point(
-        x: Field.asDouble(json['x']),
-        y: Field.asDouble(json['y']),
-        z: Field.asDouble(json['z']),
+        x: Field.doubleAt(json, 'x'),
+        y: Field.doubleAt(json, 'y'),
+        z: Field.doubleAt(json, 'z'),
       );
   final double x, y, z;
 
@@ -67,10 +67,12 @@ final class Point implements RosMessage {
 final class Quaternion implements RosMessage {
   const Quaternion({this.x = 0, this.y = 0, this.z = 0, this.w = 1});
   factory Quaternion.fromJson(Map<String, Object?> json) => Quaternion(
-        x: Field.asDouble(json['x']),
-        y: Field.asDouble(json['y']),
-        z: Field.asDouble(json['z']),
-        w: Field.asDouble(json['w']),
+        x: Field.doubleAt(json, 'x'),
+        y: Field.doubleAt(json, 'y'),
+        z: Field.doubleAt(json, 'z'),
+        // geometry_msgs/Quaternion declares `float64 w 1`; decoding an
+        // absent rotation as all-zeros gives the invalid quaternion.
+        w: Field.doubleAt(json, 'w', 1),
       );
 
   /// A rotation of [radians] about +Z — the only rotation most ground robots
@@ -247,7 +249,7 @@ final class RosTransformStamped implements RosMessage {
   factory RosTransformStamped.fromJson(Map<String, Object?> json) =>
       RosTransformStamped(
         header: Field.asMessage(json['header'], Header.fromJson),
-        childFrameId: Field.asString(json['child_frame_id']),
+        childFrameId: Field.stringAt(json, 'child_frame_id'),
         transform: Field.asMessage(json['transform'], RosTransform.fromJson),
       );
   final Header header;
@@ -292,6 +294,21 @@ final class TFMessage implements RosMessage {
 
   @override
   String toString() => 'TFMessage(${transforms.length} transforms)';
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! TFMessage || other.transforms.length != transforms.length) {
+      return false;
+    }
+    for (var i = 0; i < transforms.length; i++) {
+      if (other.transforms[i] != transforms[i]) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hashAll(transforms);
 }
 
 /// Registers every `geometry_msgs` codec.

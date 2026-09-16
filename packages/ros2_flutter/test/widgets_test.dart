@@ -153,6 +153,65 @@ void main() {
     expect(find.text('connected'), findsOneWidget);
   });
 
+  testWidgets('RosConnectionStatus counts down to the next retry',
+      (tester) async {
+    final fake = fakeClient(
+      policy: const ReconnectPolicy(
+          initialDelay: Duration(seconds: 5),
+          jitter: 0,
+          maxDelay: Duration(seconds: 5)),
+    );
+    addTearDown(fake.client.close);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RosConnection.withClient(
+          client: fake.client,
+          child: const Center(child: RosConnectionStatus()),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Connected'), findsOneWidget);
+
+    fake.transport.drop();
+    await tester.pump();
+    await tester.pump();
+
+    // The point of the widget: a bare "Reconnecting…" cannot tell an operator
+    // whether the next attempt is a moment or half a minute away.
+    expect(find.text('Reconnecting in 5s'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('Reconnecting in 3s'), findsOneWidget);
+
+    // Letting the retry succeed also proves the ticker stops: the test
+    // framework fails on a timer still pending when the tree is torn down.
+    fake.transport.up = true;
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    expect(find.text('Connected'), findsOneWidget);
+  });
+
+  testWidgets('RosConnectionStatus leaves no ticker running once connected',
+      (tester) async {
+    // A once-a-second rebuild for the life of the app, on a healthy link,
+    // would be a permanent cost for a countdown nobody is waiting on.
+    final fake = fakeClient();
+    addTearDown(fake.client.close);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RosConnection.withClient(
+          client: fake.client,
+          child: const Center(child: RosConnectionStatus()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // pumpWidget's own timer check would fail the test if a ticker were live.
+    expect(find.text('Connected'), findsOneWidget);
+  });
+
   testWidgets('RosTopicBuilder shows a placeholder, then live data',
       (tester) async {
     final fake = fakeClient();

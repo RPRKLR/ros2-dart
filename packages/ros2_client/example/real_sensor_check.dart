@@ -17,7 +17,8 @@ const cloudPoints = 20000;
 var failures = 0;
 
 void check(String what, bool ok, [String detail = '']) {
-  stdout.writeln('${ok ? 'ok  ' : 'FAIL'}  $what${detail.isEmpty ? '' : '  $detail'}');
+  stdout.writeln(
+      '${ok ? 'ok  ' : 'FAIL'}  $what${detail.isEmpty ? '' : '  $detail'}');
   if (!ok) failures++;
 }
 
@@ -35,9 +36,8 @@ Future<void> main(List<String> args) async {
   await _fragmentation(ros);
 
   await ros.close();
-  stdout.writeln(failures == 0
-      ? '\nAll checks passed.'
-      : '\n$failures check(s) failed.');
+  stdout.writeln(
+      failures == 0 ? '\nAll checks passed.' : '\n$failures check(s) failed.');
   exit(failures == 0 ? 0 : 1);
 }
 
@@ -85,8 +85,8 @@ Future<void> _scan(Ros2Client ros) async {
       'ranges[0] = ${scan.ranges[0]}');
   check('LaserScan keeps NaN', scan.ranges[101].isNaN,
       'ranges[101] = ${scan.ranges[101]}');
-  check('LaserScan finite beams are right',
-      (scan.ranges[1] - 1.1).abs() < 1e-5, 'ranges[1] = ${scan.ranges[1]}');
+  check('LaserScan finite beams are right', (scan.ranges[1] - 1.1).abs() < 1e-5,
+      'ranges[1] = ${scan.ranges[1]}');
 
   // The same scan over JSON. rosbridge maps every non-finite float to null
   // before encoding -- message_conversion.py says so outright: "JSON does not
@@ -102,7 +102,8 @@ Future<void> _scan(Ros2Client ros) async {
       json.ranges[0].isNaN, 'ranges[0] = ${json.ranges[0]}');
   check('LaserScan over JSON keeps finite beams exact',
       (json.ranges[1] - 1.1).abs() < 1e-5, 'ranges[1] = ${json.ranges[1]}');
-  check('only CBOR distinguishes inf from NaN',
+  check(
+      'only CBOR distinguishes inf from NaN',
       scan.ranges[0].isInfinite && json.ranges[0].isNaN,
       'cbor=${scan.ranges[0]}  json=${json.ranges[0]}');
 }
@@ -159,8 +160,7 @@ Future<void> _cloud(Ros2Client ros) async {
   final data = Field.asBytes(msg['data']);
   check('PointCloud2 byte count', data.length == cloudPoints * 16,
       '${data.length} bytes in ${watch.elapsedMilliseconds} ms');
-  check('PointCloud2 raw field is already Uint8List',
-      msg['data'] is Uint8List,
+  check('PointCloud2 raw field is already Uint8List', msg['data'] is Uint8List,
       msg['data'].runtimeType.toString());
   var corrupt = -1;
   for (var i = 0; i < data.length; i++) {

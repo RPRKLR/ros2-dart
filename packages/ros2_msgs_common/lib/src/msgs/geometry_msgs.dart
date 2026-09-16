@@ -200,14 +200,14 @@ final class Inertia implements RosMessage {
   }) : com = com ?? ros2.Vector3();
 
   factory Inertia.fromJson(Map<String, Object?> json) => Inertia(
-        m: Field.asDouble(json['m']),
+        m: Field.doubleAt(json, 'm'),
         com: Field.asMessage(json['com'], ros2.Vector3.fromJson),
-        ixx: Field.asDouble(json['ixx']),
-        ixy: Field.asDouble(json['ixy']),
-        ixz: Field.asDouble(json['ixz']),
-        iyy: Field.asDouble(json['iyy']),
-        iyz: Field.asDouble(json['iyz']),
-        izz: Field.asDouble(json['izz']),
+        ixx: Field.doubleAt(json, 'ixx'),
+        ixy: Field.doubleAt(json, 'ixy'),
+        ixz: Field.doubleAt(json, 'ixz'),
+        iyy: Field.doubleAt(json, 'iyy'),
+        iyz: Field.doubleAt(json, 'iyz'),
+        izz: Field.doubleAt(json, 'izz'),
       );
 
   final double m;
@@ -324,9 +324,9 @@ final class Point32 implements RosMessage {
   });
 
   factory Point32.fromJson(Map<String, Object?> json) => Point32(
-        x: Field.asDouble(json['x']),
-        y: Field.asDouble(json['y']),
-        z: Field.asDouble(json['z']),
+        x: Field.doubleAt(json, 'x'),
+        y: Field.doubleAt(json, 'y'),
+        z: Field.doubleAt(json, 'z'),
       );
 
   final double x;
@@ -450,7 +450,7 @@ final class PolygonInstance implements RosMessage {
   factory PolygonInstance.fromJson(Map<String, Object?> json) =>
       PolygonInstance(
         polygon: Field.asMessage(json['polygon'], Polygon.fromJson),
-        id: Field.asInt(json['id']),
+        id: Field.intAt(json, 'id'),
       );
 
   final Polygon polygon;
@@ -582,9 +582,9 @@ final class Pose2D implements RosMessage {
   });
 
   factory Pose2D.fromJson(Map<String, Object?> json) => Pose2D(
-        x: Field.asDouble(json['x']),
-        y: Field.asDouble(json['y']),
-        theta: Field.asDouble(json['theta']),
+        x: Field.doubleAt(json, 'x'),
+        y: Field.doubleAt(json, 'y'),
+        theta: Field.doubleAt(json, 'theta'),
       );
 
   final double x;
@@ -993,8 +993,8 @@ final class VelocityStamped implements RosMessage {
   factory VelocityStamped.fromJson(Map<String, Object?> json) =>
       VelocityStamped(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
-        bodyFrameId: Field.asString(json['body_frame_id']),
-        referenceFrameId: Field.asString(json['reference_frame_id']),
+        bodyFrameId: Field.stringAt(json, 'body_frame_id'),
+        referenceFrameId: Field.stringAt(json, 'reference_frame_id'),
         velocity: Field.asMessage(json['velocity'], ros2.Twist.fromJson),
       );
 
@@ -1061,8 +1061,8 @@ final class VelocityWithCovarianceStamped implements RosMessage {
   factory VelocityWithCovarianceStamped.fromJson(Map<String, Object?> json) =>
       VelocityWithCovarianceStamped(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
-        bodyFrameId: Field.asString(json['body_frame_id']),
-        referenceFrameId: Field.asString(json['reference_frame_id']),
+        bodyFrameId: Field.stringAt(json, 'body_frame_id'),
+        referenceFrameId: Field.stringAt(json, 'reference_frame_id'),
         velocity:
             Field.asMessage(json['velocity'], TwistWithCovariance.fromJson),
       );

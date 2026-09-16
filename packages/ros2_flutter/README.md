@@ -45,6 +45,7 @@ RosConnection(
 |---|---|
 | `RosConnection` | Owns the client; connects on mount, closes on dispose, reconnects on app resume |
 | `RosConnectionBuilder` | Rebuilds on connection state changes |
+| `RosConnectionStatus` | Status dot and label, counting down to the next retry |
 | `RosTopicBuilder<T>` | Subscribes to a topic for the widget's lifetime |
 | `RosCameraView` | Renders a `CompressedImage` topic |
 | `RosRawImageView` | Renders a raw `Image` topic (rgb8/bgr8/mono8/rgba8) |

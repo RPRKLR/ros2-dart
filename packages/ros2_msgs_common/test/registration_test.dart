@@ -21,22 +21,29 @@ void main() {
     test('core types still resolve to the client classes', () {
       // If this package re-emitted them, the last registration would win and
       // these would come back as its own classes instead.
-      expect(MessageRegistry.byRosType('geometry_msgs/msg/Twist')!
-          .fromJson(const {}), isA<Twist>());
-      expect(MessageRegistry.byRosType('sensor_msgs/msg/Image')!
-          .fromJson(const {}), isA<RosImage>());
-      expect(MessageRegistry.byRosType('std_msgs/msg/Header')!
-          .fromJson(const {}), isA<Header>());
-      expect(MessageRegistry.byRosType('nav_msgs/msg/OccupancyGrid')!
-          .fromJson(const {}), isA<OccupancyGrid>());
+      expect(
+          MessageRegistry.byRosType('geometry_msgs/msg/Twist')!
+              .fromJson(const {}),
+          isA<Twist>());
+      expect(
+          MessageRegistry.byRosType('sensor_msgs/msg/Image')!
+              .fromJson(const {}),
+          isA<RosImage>());
+      expect(
+          MessageRegistry.byRosType('std_msgs/msg/Header')!.fromJson(const {}),
+          isA<Header>());
+      expect(
+          MessageRegistry.byRosType('nav_msgs/msg/OccupancyGrid')!
+              .fromJson(const {}),
+          isA<OccupancyGrid>());
     });
 
     test('the widgets in ros2_flutter can still be fed', () {
       // They are typed against the bundled classes, so a subscription for the
       // bundled Dart type has to keep resolving.
       expect(MessageRegistry.has<LaserScan>(), isTrue);
-      expect(MessageRegistry.of<LaserScan>().rosType,
-          'sensor_msgs/msg/LaserScan');
+      expect(
+          MessageRegistry.of<LaserScan>().rosType, 'sensor_msgs/msg/LaserScan');
     });
   });
 
@@ -84,8 +91,10 @@ void main() {
 
     test('tf2 lookup service is present alongside the bundled TFMessage', () {
       // tf2_msgs/TFMessage is bundled; FrameGraph is not.
-      expect(MessageRegistry.byRosType('tf2_msgs/msg/TFMessage')!
-          .fromJson(const {}), isA<TFMessage>());
+      expect(
+          MessageRegistry.byRosType('tf2_msgs/msg/TFMessage')!
+              .fromJson(const {}),
+          isA<TFMessage>());
       expect(
           ServiceRegistry.of<FrameGraphRequest, FrameGraphResponse>()
               .serviceType,

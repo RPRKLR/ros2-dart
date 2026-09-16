@@ -40,6 +40,46 @@ final class NodeInfo {
       '${subscribing.length} sub, ${services.length} srv)';
 }
 
+/// What a bridge can do, as reported by its own `rosapi` node.
+///
+/// See [Ros2Introspection.probeBridge].
+@immutable
+final class BridgeInfo {
+  const BridgeInfo({
+    required this.rosVersion,
+    required this.distro,
+    required this.supportsActions,
+  });
+
+  /// Major ROS version the bridge is running against: 1 or 2.
+  final int rosVersion;
+
+  /// ROS distribution name, e.g. `humble`. Empty if the bridge did not say.
+  final String distro;
+
+  /// Whether ROS 2 actions can be used over this bridge.
+  ///
+  /// `send_action_goal` arrived in `rosbridge_suite` 2.0.0 (October 2024).
+  /// An older bridge answers a goal with nothing at all — see
+  /// [Ros2Introspection.probeBridge] for why this is worth knowing before
+  /// the first goal rather than after.
+  final bool supportsActions;
+
+  @override
+  bool operator ==(Object other) =>
+      other is BridgeInfo &&
+      other.rosVersion == rosVersion &&
+      other.distro == distro &&
+      other.supportsActions == supportsActions;
+
+  @override
+  int get hashCode => Object.hash(rosVersion, distro, supportsActions);
+
+  @override
+  String toString() => 'BridgeInfo(ROS $rosVersion $distro, '
+      'actions: ${supportsActions ? 'yes' : 'no'})';
+}
+
 /// Live introspection of the ROS graph, via the `rosapi` node.
 ///
 /// Every method here needs `rosapi` running — it ships with `rosbridge_suite`
@@ -136,8 +176,8 @@ extension Ros2Introspection on Ros2Client {
   /// Every interface type the robot knows about, e.g. `sensor_msgs/msg/Image`.
   Future<List<String>> listInterfaces(
       {Duration timeout = graphQueryTimeout}) async {
-    final res = await callServiceJson('/rosapi/interfaces', const {},
-        timeout: timeout);
+    final res =
+        await callServiceJson('/rosapi/interfaces', const {}, timeout: timeout);
     return _strings(res['interfaces']);
   }
 
@@ -201,6 +241,51 @@ extension Ros2Introspection on Ros2Client {
   Future<String> rosDistro() async {
     final res = await callServiceJson('/rosapi/get_ros_version', const {});
     return '${res['distro'] ?? ''}';
+  }
+
+  /// What this bridge supports, read from `rosapi` rather than assumed.
+  ///
+  /// Worth calling once at startup in any app that sends action goals. A
+  /// bridge older than `rosbridge_suite` 2.0.0 does not implement
+  /// `send_action_goal`, and rosbridge reports an unknown operation **on the
+  /// robot's own console and nowhere else** — so [Ros2Client.sendGoal] simply
+  /// never completes, and without a `timeout` it never fails either. One call
+  /// here turns that into a message an operator can act on:
+  ///
+  /// ```dart
+  /// final bridge = await ros.probeBridge();
+  /// if (!bridge.supportsActions) {
+  ///   // Tell the user to upgrade rosbridge_suite, and hide the nav UI.
+  /// }
+  /// ```
+  ///
+  /// [supportsActions] is decided by whether `rosapi` offers
+  /// `/rosapi/action_servers`, which arrived in the same release. Deliberately
+  /// **not** by calling that service: on a default-launched bridge
+  /// `call_services_in_new_thread` is false and
+  /// `default_call_service_timeout` is `0.0`, so calling a service that does
+  /// not exist parks the bridge's only queue thread *for the life of the
+  /// connection*. A diagnostic that can wedge the link it is diagnosing is
+  /// worse than the problem. `/rosapi/services` exists in every version, so
+  /// asking it what exists is free of that.
+  ///
+  /// Needs `rosapi` running. `rosbridge_websocket_launch.xml` starts it, but a
+  /// bare `ros2 run rosbridge_server rosbridge_websocket` does not, and then
+  /// this throws a [ServiceCallException] on [timeout] like any other call.
+  Future<BridgeInfo> probeBridge(
+      {Duration timeout = const Duration(seconds: 10)}) async {
+    final version = await callServiceJson('/rosapi/get_ros_version', const {},
+        timeout: timeout);
+    final services = await listServices(timeout: timeout);
+    return BridgeInfo(
+      rosVersion: switch (version['version']) {
+        final int v => v,
+        final num v => v.toInt(),
+        _ => 0,
+      },
+      distro: '${version['distro'] ?? ''}',
+      supportsActions: services.contains('/rosapi/action_servers'),
+    );
   }
 
   // ------------------------------------------------------------- parameters

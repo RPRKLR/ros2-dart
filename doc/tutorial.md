@@ -45,6 +45,17 @@ Do this before anything else. A robot UI that cannot tell you it is offline is
 worse than no UI, and this is two lines:
 
 ```dart
+AppBar(title: const Text('Robot'), actions: const [RosConnectionStatus()])
+```
+
+`RosConnectionStatus` is a dot and a label, and while the client is backing off
+it counts down to the next attempt — the reconnect delay doubles each time, so
+"reconnecting…" on its own leaves an operator unable to tell a retry a second
+away from one half a minute away.
+
+For your own layout, build on the state directly:
+
+```dart
 RosConnectionBuilder(
   builder: (context, state) => switch (state) {
     RosConnectionState.connected => const Text('connected'),

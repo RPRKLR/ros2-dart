@@ -32,15 +32,15 @@ final class ImageMarker implements RosMessage {
 
   factory ImageMarker.fromJson(Map<String, Object?> json) => ImageMarker(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
-        ns: Field.asString(json['ns']),
-        id: Field.asInt(json['id']),
-        type: Field.asInt(json['type']),
-        action: Field.asInt(json['action']),
+        ns: Field.stringAt(json, 'ns'),
+        id: Field.intAt(json, 'id'),
+        type: Field.intAt(json, 'type'),
+        action: Field.intAt(json, 'action'),
         position: Field.asMessage(json['position'], ros2.Point.fromJson),
-        scale: Field.asDouble(json['scale']),
+        scale: Field.doubleAt(json, 'scale'),
         outlineColor:
             Field.asMessage(json['outline_color'], ros2.ColorRGBA.fromJson),
-        filled: Field.asInt(json['filled']),
+        filled: Field.intAt(json, 'filled'),
         fillColor: Field.asMessage(json['fill_color'], ros2.ColorRGBA.fromJson),
         lifetime: Field.asMessage(json['lifetime'], ros2.RosDuration.fromJson),
         points: Field.asList<ros2.Point>(json['points'], ros2.Point.fromJson),
@@ -154,9 +154,9 @@ final class InteractiveMarker implements RosMessage {
       InteractiveMarker(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
         pose: Field.asMessage(json['pose'], ros2.Pose.fromJson),
-        name: Field.asString(json['name']),
-        description: Field.asString(json['description']),
-        scale: Field.asDouble(json['scale']),
+        name: Field.stringAt(json, 'name'),
+        description: Field.stringAt(json, 'description'),
+        scale: Field.doubleAt(json, 'scale'),
         menuEntries:
             Field.asList<MenuEntry>(json['menu_entries'], MenuEntry.fromJson),
         controls: Field.asList<InteractiveMarkerControl>(
@@ -230,16 +230,16 @@ final class InteractiveMarkerControl implements RosMessage {
 
   factory InteractiveMarkerControl.fromJson(Map<String, Object?> json) =>
       InteractiveMarkerControl(
-        name: Field.asString(json['name']),
+        name: Field.stringAt(json, 'name'),
         orientation:
             Field.asMessage(json['orientation'], ros2.Quaternion.fromJson),
-        orientationMode: Field.asInt(json['orientation_mode']),
-        interactionMode: Field.asInt(json['interaction_mode']),
-        alwaysVisible: Field.asBool(json['always_visible']),
+        orientationMode: Field.intAt(json, 'orientation_mode'),
+        interactionMode: Field.intAt(json, 'interaction_mode'),
+        alwaysVisible: Field.boolAt(json, 'always_visible'),
         markers: Field.asList<Marker>(json['markers'], Marker.fromJson),
         independentMarkerOrientation:
-            Field.asBool(json['independent_marker_orientation']),
-        description: Field.asString(json['description']),
+            Field.boolAt(json, 'independent_marker_orientation'),
+        description: Field.stringAt(json, 'description'),
       );
 
   static const int inherit = 0;
@@ -330,14 +330,14 @@ final class InteractiveMarkerFeedback implements RosMessage {
   factory InteractiveMarkerFeedback.fromJson(Map<String, Object?> json) =>
       InteractiveMarkerFeedback(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
-        clientId: Field.asString(json['client_id']),
-        markerName: Field.asString(json['marker_name']),
-        controlName: Field.asString(json['control_name']),
-        eventType: Field.asInt(json['event_type']),
+        clientId: Field.stringAt(json, 'client_id'),
+        markerName: Field.stringAt(json, 'marker_name'),
+        controlName: Field.stringAt(json, 'control_name'),
+        eventType: Field.intAt(json, 'event_type'),
         pose: Field.asMessage(json['pose'], ros2.Pose.fromJson),
-        menuEntryId: Field.asInt(json['menu_entry_id']),
+        menuEntryId: Field.intAt(json, 'menu_entry_id'),
         mousePoint: Field.asMessage(json['mouse_point'], ros2.Point.fromJson),
-        mousePointValid: Field.asBool(json['mouse_point_valid']),
+        mousePointValid: Field.boolAt(json, 'mouse_point_valid'),
       );
 
   static const int keepAlive = 0;
@@ -417,8 +417,8 @@ final class InteractiveMarkerInit implements RosMessage {
 
   factory InteractiveMarkerInit.fromJson(Map<String, Object?> json) =>
       InteractiveMarkerInit(
-        serverId: Field.asString(json['server_id']),
-        seqNum: Field.asInt(json['seq_num']),
+        serverId: Field.stringAt(json, 'server_id'),
+        seqNum: Field.intAt(json, 'seq_num'),
         markers: Field.asList<InteractiveMarker>(
             json['markers'], InteractiveMarker.fromJson),
       );
@@ -471,7 +471,7 @@ final class InteractiveMarkerPose implements RosMessage {
       InteractiveMarkerPose(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
         pose: Field.asMessage(json['pose'], ros2.Pose.fromJson),
-        name: Field.asString(json['name']),
+        name: Field.stringAt(json, 'name'),
       );
 
   final ros2.Header header;
@@ -523,9 +523,9 @@ final class InteractiveMarkerUpdate implements RosMessage {
 
   factory InteractiveMarkerUpdate.fromJson(Map<String, Object?> json) =>
       InteractiveMarkerUpdate(
-        serverId: Field.asString(json['server_id']),
-        seqNum: Field.asInt(json['seq_num']),
-        type: Field.asInt(json['type']),
+        serverId: Field.stringAt(json, 'server_id'),
+        seqNum: Field.intAt(json, 'seq_num'),
+        type: Field.intAt(json, 'type'),
         markers: Field.asList<InteractiveMarker>(
             json['markers'], InteractiveMarker.fromJson),
         poses: Field.asList<InteractiveMarkerPose>(
@@ -619,28 +619,28 @@ final class Marker implements RosMessage {
 
   factory Marker.fromJson(Map<String, Object?> json) => Marker(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
-        ns: Field.asString(json['ns']),
-        id: Field.asInt(json['id']),
-        type: Field.asInt(json['type']),
-        action: Field.asInt(json['action']),
+        ns: Field.stringAt(json, 'ns'),
+        id: Field.intAt(json, 'id'),
+        type: Field.intAt(json, 'type'),
+        action: Field.intAt(json, 'action'),
         pose: Field.asMessage(json['pose'], ros2.Pose.fromJson),
         scale: Field.asMessage(json['scale'], ros2.Vector3.fromJson),
         color: Field.asMessage(json['color'], ros2.ColorRGBA.fromJson),
         lifetime: Field.asMessage(json['lifetime'], ros2.RosDuration.fromJson),
-        frameLocked: Field.asBool(json['frame_locked']),
+        frameLocked: Field.boolAt(json, 'frame_locked'),
         points: Field.asList<ros2.Point>(json['points'], ros2.Point.fromJson),
         colors: Field.asList<ros2.ColorRGBA>(
             json['colors'], ros2.ColorRGBA.fromJson),
-        textureResource: Field.asString(json['texture_resource']),
+        textureResource: Field.stringAt(json, 'texture_resource'),
         texture:
             Field.asMessage(json['texture'], ros2.CompressedImage.fromJson),
         uvCoordinates: Field.asList<UVCoordinate>(
             json['uv_coordinates'], UVCoordinate.fromJson),
-        text: Field.asString(json['text']),
-        meshResource: Field.asString(json['mesh_resource']),
+        text: Field.stringAt(json, 'text'),
+        meshResource: Field.stringAt(json, 'mesh_resource'),
         meshFile: Field.asMessage(json['mesh_file'], MeshFile.fromJson),
         meshUseEmbeddedMaterials:
-            Field.asBool(json['mesh_use_embedded_materials']),
+            Field.boolAt(json, 'mesh_use_embedded_materials'),
       );
 
   static const int arrow = 0;
@@ -834,11 +834,11 @@ final class MenuEntry implements RosMessage {
   });
 
   factory MenuEntry.fromJson(Map<String, Object?> json) => MenuEntry(
-        id: Field.asInt(json['id']),
-        parentId: Field.asInt(json['parent_id']),
-        title: Field.asString(json['title']),
-        command: Field.asString(json['command']),
-        commandType: Field.asInt(json['command_type']),
+        id: Field.intAt(json, 'id'),
+        parentId: Field.intAt(json, 'parent_id'),
+        title: Field.stringAt(json, 'title'),
+        command: Field.stringAt(json, 'command'),
+        commandType: Field.intAt(json, 'command_type'),
       );
 
   static const int feedback = 0;
@@ -896,7 +896,7 @@ final class MeshFile implements RosMessage {
   }) : data = data ?? Uint8List(0);
 
   factory MeshFile.fromJson(Map<String, Object?> json) => MeshFile(
-        filename: Field.asString(json['filename']),
+        filename: Field.stringAt(json, 'filename'),
         data: Field.asBytes(json['data']),
       );
 
@@ -940,8 +940,8 @@ final class UVCoordinate implements RosMessage {
   });
 
   factory UVCoordinate.fromJson(Map<String, Object?> json) => UVCoordinate(
-        u: Field.asDouble(json['u']),
-        v: Field.asDouble(json['v']),
+        u: Field.doubleAt(json, 'u'),
+        v: Field.doubleAt(json, 'v'),
       );
 
   final double u;
@@ -1009,7 +1009,7 @@ final class GetInteractiveMarkersResponse implements RosMessage {
 
   factory GetInteractiveMarkersResponse.fromJson(Map<String, Object?> json) =>
       GetInteractiveMarkersResponse(
-        sequenceNumber: Field.asInt(json['sequence_number']),
+        sequenceNumber: Field.intAt(json, 'sequence_number'),
         markers: Field.asList<InteractiveMarker>(
             json['markers'], InteractiveMarker.fromJson),
       );

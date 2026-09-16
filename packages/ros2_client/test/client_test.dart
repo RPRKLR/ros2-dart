@@ -375,7 +375,6 @@ void main() {
     });
   });
 
-
   group('losing the connection', () {
     test('states does not lose the connected transition', () async {
       // Subscribing and connecting in the same turn is the Flutter shape:
@@ -384,8 +383,7 @@ void main() {
       // drops everything in between, leaving the UI on "connecting" forever.
       final own = FakeBridge();
       final client = Ros2Client(Uri.parse('ws://fake:9090'),
-          transportFactory: (_) => own,
-          reconnectPolicy: ReconnectPolicy.none);
+          transportFactory: (_) => own, reconnectPolicy: ReconnectPolicy.none);
       addTearDown(client.close);
 
       final seen = <RosConnectionState>[];
@@ -465,7 +463,6 @@ void main() {
     });
   });
 
-
   group('buffering while offline', () {
     test('the outbox drops the oldest, not the newest', () async {
       await connect();
@@ -483,7 +480,9 @@ void main() {
       final kept = <String>[];
       for (final command in _outboxOf(ros)) {
         final msg = command['msg'];
-        if (msg is Map && msg['data'] is String) kept.add(msg['data'] as String);
+        if (msg is Map && msg['data'] is String) {
+          kept.add(msg['data'] as String);
+        }
       }
       expect(kept, hasLength(Ros2Client.maxOutbox));
       expect(kept.last, '299', reason: 'the newest command must survive');
@@ -601,8 +600,8 @@ void main() {
       // corrupt message; the repeated index is the only signal there is.
       final a = frame('AAAA');
       final b = frame('BBBB');
-      void fragment(String body, int index, int total) => bridge.emit(
-          jsonEncode({
+      void fragment(String body, int index, int total) =>
+          bridge.emit(jsonEncode({
             'op': 'fragment',
             'id': '0',
             'num': index,
@@ -610,8 +609,14 @@ void main() {
             'data': body,
           }));
 
-      final aHalves = [a.substring(0, a.length ~/ 2), a.substring(a.length ~/ 2)];
-      final bHalves = [b.substring(0, b.length ~/ 2), b.substring(b.length ~/ 2)];
+      final aHalves = [
+        a.substring(0, a.length ~/ 2),
+        a.substring(a.length ~/ 2)
+      ];
+      final bHalves = [
+        b.substring(0, b.length ~/ 2),
+        b.substring(b.length ~/ 2)
+      ];
 
       fragment(aHalves[0], 0, 2);
       fragment(bHalves[0], 0, 2); // second message starts under the same id
@@ -620,8 +625,7 @@ void main() {
 
       // The complete message is B; A was abandoned mid-flight.
       expect(seen.map((m) => m.data), ['BBBB']);
-      expect(statuses.map((s) => s.message).join(),
-          contains('same id'));
+      expect(statuses.map((s) => s.message).join(), contains('same id'));
     });
 
     test('a clean fragmented message still reassembles', () async {
@@ -662,15 +666,14 @@ void main() {
       // substitutes msg with {secs, nsecs, bytes} holding raw CDR. With no CDR
       // decoder every field reads back as its type default, forever, silently.
       expect(
-        () => ros.subscribe<LaserScan>('/scan',
-            compression: Compression.cborRaw),
-        throwsA(isA<ArgumentError>().having((e) => e.message, 'message',
-            contains('raw CDR blob'))),
+        () =>
+            ros.subscribe<LaserScan>('/scan', compression: Compression.cborRaw),
+        throwsA(isA<ArgumentError>()
+            .having((e) => e.message, 'message', contains('raw CDR blob'))),
       );
 
       // The untyped API can still ask for it and read the bytes itself.
-      expect(
-          () => ros.subscribeJson('/scan', compression: Compression.cborRaw),
+      expect(() => ros.subscribeJson('/scan', compression: Compression.cborRaw),
           returnsNormally);
     });
 
@@ -680,8 +683,12 @@ void main() {
       final statuses = <RosStatus>[];
       ros.status.listen(statuses.add);
 
-      ros.subscribe<LaserScan>('/scan', compression: Compression.none).listen((_) {});
-      ros.subscribe<LaserScan>('/scan', compression: Compression.cbor).listen((_) {});
+      ros
+          .subscribe<LaserScan>('/scan', compression: Compression.none)
+          .listen((_) {});
+      ros
+          .subscribe<LaserScan>('/scan', compression: Compression.cbor)
+          .listen((_) {});
       await pump();
 
       // rosbridge applies one compression per topic, taking the strongest.
@@ -728,9 +735,8 @@ void main() {
     test('buffer delivers every message, in order', () async {
       await connect();
       final seen = <double>[];
-      final sub = ros
-          .subscribe<LaserScan>('/scan')
-          .listen((s) => seen.add(s.angleMin));
+      final sub =
+          ros.subscribe<LaserScan>('/scan').listen((s) => seen.add(s.angleMin));
       await pump();
 
       sub.pause();
@@ -891,8 +897,7 @@ void main() {
           () => ros.subscribe<RosImage>('/a',
               compression: Compression.none, fragmentSize: 65536),
           returnsNormally);
-      expect(
-          () => ros.subscribe<RosImage>('/b', compression: Compression.cbor),
+      expect(() => ros.subscribe<RosImage>('/b', compression: Compression.cbor),
           returnsNormally);
     });
 
@@ -908,8 +913,7 @@ void main() {
       );
       addTearDown(other.close);
 
-      expect(
-          () => other.subscribe<RosImage>('/camera', fragmentSize: 4096),
+      expect(() => other.subscribe<RosImage>('/camera', fragmentSize: 4096),
           throwsArgumentError);
     });
 
@@ -1102,6 +1106,178 @@ void main() {
         throwsA(isA<ArgumentError>()
             .having((e) => e.message, 'message', contains('<node>:<param>'))),
       );
+    });
+  });
+
+  group('waiting for the link', () {
+    test('completes when the retry loop connects, not when connect() does',
+        () async {
+      // The shape this exists for: the first attempt fails, so connect()
+      // throws, and the connection the app actually gets is the one the
+      // retry loop makes a moment later.
+      var attempt = 0;
+      final client = Ros2Client(
+        Uri.parse('ws://fake:9090'),
+        transportFactory: (_) => FakeBridge(failConnect: attempt++ == 0),
+        reconnectPolicy: const ReconnectPolicy(
+            initialDelay: Duration(milliseconds: 10), jitter: 0),
+      );
+      addTearDown(client.close);
+
+      await expectLater(client.connect(), throwsA(isA<StateError>()));
+      await client.waitUntilConnected(timeout: const Duration(seconds: 2));
+
+      expect(client.isConnected, isTrue);
+    });
+
+    test('returns immediately when already connected', () async {
+      await connect();
+      await ros.waitUntilConnected(timeout: const Duration(milliseconds: 50));
+      expect(ros.isConnected, isTrue);
+    });
+
+    test('times out rather than waiting forever on a dead robot', () async {
+      final gate = GatedBridge();
+      final client = Ros2Client(Uri.parse('ws://fake:9090'),
+          transportFactory: (_) => gate, reconnectPolicy: ReconnectPolicy.none);
+      addTearDown(client.close);
+      unawaited(client.connect().catchError((Object _) {}));
+
+      await expectLater(
+        client.waitUntilConnected(timeout: const Duration(milliseconds: 30)),
+        throwsA(isA<TimeoutException>()),
+      );
+      gate.release();
+    });
+
+    test('throws once the retry policy gives up', () async {
+      // Without this the caller waits out its whole timeout against a client
+      // that stopped trying on the first failure.
+      final client = Ros2Client(Uri.parse('ws://fake:9090'),
+          transportFactory: (_) => FakeBridge(failConnect: true),
+          reconnectPolicy: ReconnectPolicy.none);
+      addTearDown(client.close);
+
+      final expectation = expectLater(
+        client.waitUntilConnected(),
+        throwsA(isA<StateError>()
+            .having((e) => e.message, 'message', contains('Gave up'))),
+      );
+      await expectLater(client.connect(), throwsA(isA<StateError>()));
+      await expectation;
+    });
+
+    test('throws when the client is closed while waiting', () async {
+      final gate = GatedBridge();
+      final client = Ros2Client(Uri.parse('ws://fake:9090'),
+          transportFactory: (_) => gate, reconnectPolicy: ReconnectPolicy.none);
+      unawaited(client.connect().catchError((Object _) {}));
+
+      // Attached before the close: an error reaching a future nobody is
+      // listening to yet is reported as an unhandled async error.
+      final expectation =
+          expectLater(client.waitUntilConnected(), throwsA(isA<StateError>()));
+      await pump();
+      await client.close();
+
+      await expectation;
+      gate.release();
+    });
+
+    test('nextRetryAt reports when the next attempt fires', () async {
+      final farm = FakeBridgeFarm();
+      final client = Ros2Client(
+        Uri.parse('ws://fake:9090'),
+        transportFactory: (_) => farm.create(),
+        reconnectPolicy: const ReconnectPolicy(
+            initialDelay: Duration(milliseconds: 200), jitter: 0),
+      );
+      addTearDown(client.close);
+      await client.connect();
+
+      expect(client.nextRetryAt, isNull, reason: 'connected, nothing pending');
+
+      farm.current.drop();
+      await pump();
+
+      final at = client.nextRetryAt;
+      expect(at, isNotNull);
+      expect(at!.difference(DateTime.now()).inMilliseconds,
+          inInclusiveRange(0, 200));
+      expect(client.reconnectAttempt, 1);
+    });
+  });
+
+  group('bridge capabilities', () {
+    test('reads the action support the bridge actually has', () async {
+      await connect();
+      final future = ros.probeBridge();
+      await pump();
+      bridge.respondToCall({'version': 2, 'distro': 'humble'});
+      await pump();
+      // The second call: what rosapi offers. /rosapi/action_servers arrived
+      // in rosbridge_suite 2.0.0, alongside send_action_goal.
+      expect(bridge.lastOf('call_service')!['service'], '/rosapi/services');
+      bridge.respondToCall({
+        'services': ['/rosapi/topics', '/rosapi/action_servers'],
+      });
+
+      final info = await future;
+      expect(info.rosVersion, 2);
+      expect(info.distro, 'humble');
+      expect(info.supportsActions, isTrue);
+    });
+
+    test('reports no action support on a pre-2.0 bridge', () async {
+      await connect();
+      final future = ros.probeBridge();
+      await pump();
+      bridge.respondToCall({'version': 2, 'distro': 'foxy'});
+      await pump();
+      bridge.respondToCall({
+        'services': ['/rosapi/topics', '/rosapi/nodes'],
+      });
+
+      expect((await future).supportsActions, isFalse);
+    });
+
+    test('never calls a service it has not seen advertised', () async {
+      // Calling /rosapi/action_servers to find out whether it exists would
+      // park the bridge's only queue thread for the life of the connection:
+      // call_services_in_new_thread is false by default and
+      // default_call_service_timeout is 0.0, meaning wait forever.
+      await connect();
+      final future = ros.probeBridge();
+      await pump();
+      bridge.respondToCall({'version': 2, 'distro': 'humble'});
+      await pump();
+      bridge.respondToCall({'services': <String>[]});
+      await future;
+
+      final called =
+          bridge.opsOf('call_service').map((c) => c['service']).toList();
+      expect(called, isNot(contains('/rosapi/action_servers')));
+    });
+  });
+
+  group('handshake credentials', () {
+    test('offers the subprotocols a proxy in front of the bridge reads',
+        () async {
+      // rosbridge itself has no auth: the `auth` opcode was dropped when
+      // rosauth was not ported to ROS 2. A subprotocol is the only header a
+      // browser can put on a WebSocket handshake, so it is where a token goes.
+      Iterable<String>? seen;
+      final transport = WebSocketTransport(
+        Uri.parse('ws://fake:9090'),
+        protocols: const ['rosbridge.v1', 'token.abc123'],
+        channelFactory: (uri, {protocols}) {
+          seen = protocols;
+          throw StateError('no real socket in a unit test');
+        },
+      );
+
+      await expectLater(transport.connect(), throwsA(isA<Object>()));
+      expect(seen, ['rosbridge.v1', 'token.abc123']);
     });
   });
 

@@ -19,7 +19,7 @@ library;
 export 'src/client.dart' show GoalHandle, Ros2Client, RosPublisher, RosStatus;
 export 'src/encoding/wire_codec.dart' show WireCodec;
 export 'src/introspection/introspection.dart'
-    show NodeInfo, Ros2Introspection, TopicInfo;
+    show BridgeInfo, NodeInfo, Ros2Introspection, TopicInfo;
 export 'src/messages/action.dart'
     show ActionCodec, ActionFailedException, ActionRegistry, GoalStatus;
 export 'src/messages/conversions.dart' show Field;

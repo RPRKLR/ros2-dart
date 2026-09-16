@@ -10,27 +10,54 @@ import 'std_msgs.dart';
 /// `nav_msgs/msg/Odometry`.
 @immutable
 final class Odometry implements RosMessage {
-  const Odometry({
+  Odometry({
     this.header = const Header(),
     this.childFrameId = '',
     this.pose = const Pose(),
     this.twist = const Twist(),
-  });
+    Float64List? poseCovariance,
+    Float64List? twistCovariance,
+  })  : poseCovariance = poseCovariance ?? _noCovariance,
+        twistCovariance = twistCovariance ?? _noCovariance;
+
+  static final Float64List _noCovariance = Float64List(0);
+
+  /// A 36-element covariance, or all zeros when the message carried none.
+  ///
+  /// The field is fixed-size in the definition, and rosbridge asserts the
+  /// exact length when it populates the message — a short one is rejected and
+  /// the publish is dropped.
+  static Float64List _covarianceOr(Float64List value) =>
+      value.length == 36 ? value : Float64List(36);
 
   factory Odometry.fromJson(Map<String, Object?> json) => Odometry(
         header: Field.asMessage(json['header'], Header.fromJson),
-        childFrameId: Field.asString(json['child_frame_id']),
+        childFrameId: Field.stringAt(json, 'child_frame_id'),
         // pose and twist are wrapped in *WithCovariance in the real message.
         pose: Field.asMessage(
             (json['pose'] as Map<String, Object?>?)?['pose'], Pose.fromJson),
         twist: Field.asMessage(
             (json['twist'] as Map<String, Object?>?)?['twist'], Twist.fromJson),
+        poseCovariance: Field.asFloat64List(
+            (json['pose'] as Map<String, Object?>?)?['covariance']),
+        twistCovariance: Field.asFloat64List(
+            (json['twist'] as Map<String, Object?>?)?['covariance']),
       );
 
   final Header header;
   final String childFrameId;
   final Pose pose;
   final Twist twist;
+
+  /// Row-major 6x6 pose covariance, or empty if the message carried none.
+  ///
+  /// Decoding used to drop this and encoding fabricated 36 zeros, so relaying
+  /// an odometry message quietly turned "this is my uncertainty" into "I am
+  /// certain" — which is exactly backwards for anything consuming it.
+  final Float64List poseCovariance;
+
+  /// Row-major 6x6 twist covariance, or empty if the message carried none.
+  final Float64List twistCovariance;
 
   @override
   String get rosType => 'nav_msgs/msg/Odometry';
@@ -39,8 +66,14 @@ final class Odometry implements RosMessage {
   Map<String, Object?> toJson() => {
         'header': header.toJson(),
         'child_frame_id': childFrameId,
-        'pose': {'pose': pose.toJson(), 'covariance': List.filled(36, 0.0)},
-        'twist': {'twist': twist.toJson(), 'covariance': List.filled(36, 0.0)},
+        'pose': {
+          'pose': pose.toJson(),
+          'covariance': Field.encodeNumbers(_covarianceOr(poseCovariance)),
+        },
+        'twist': {
+          'twist': twist.toJson(),
+          'covariance': Field.encodeNumbers(_covarianceOr(twistCovariance)),
+        },
       };
 
   @override
@@ -75,9 +108,9 @@ final class MapMetaData implements RosMessage {
   });
 
   factory MapMetaData.fromJson(Map<String, Object?> json) => MapMetaData(
-        resolution: Field.asDouble(json['resolution']),
-        width: Field.asInt(json['width']),
-        height: Field.asInt(json['height']),
+        resolution: Field.doubleAt(json, 'resolution'),
+        width: Field.intAt(json, 'width'),
+        height: Field.intAt(json, 'height'),
         origin: Field.asMessage(json['origin'], Pose.fromJson),
       );
 

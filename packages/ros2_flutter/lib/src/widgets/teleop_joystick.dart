@@ -96,7 +96,6 @@ class _TeleopJoystickState extends State<TeleopJoystick> {
     }
   }
 
-
   @override
   void dispose() {
     _timer?.cancel();
@@ -111,8 +110,8 @@ class _TeleopJoystickState extends State<TeleopJoystick> {
 
   Twist get _command {
     final normalized = _knob / _radius;
-    final forward = (widget.invertY ? normalized.dy : -normalized.dy)
-        .clamp(-1.0, 1.0);
+    final forward =
+        (widget.invertY ? normalized.dy : -normalized.dy).clamp(-1.0, 1.0);
     final turn = (-normalized.dx).clamp(-1.0, 1.0);
     return Twist.drive(
       forward: forward * widget.maxLinearSpeed,
@@ -284,8 +283,8 @@ class _TeleopPadState extends State<TeleopPad> {
     _current = twist;
     _publishTo(_publisher, twist);
     _timer?.cancel();
-    _timer =
-        Timer.periodic(widget.publishRate, (_) => _publishTo(_publisher, _current));
+    _timer = Timer.periodic(
+        widget.publishRate, (_) => _publishTo(_publisher, _current));
   }
 
   void _release() {

@@ -491,7 +491,8 @@ int32 x
     test('handles an array of a bundled type', () {
       final code = emitPkg('geometry_msgs/Point[] points');
       expect(code, contains('List<ros2.Point> points'));
-      expect(code,
+      expect(
+          code,
           contains('Field.asList<ros2.Point>(json[\'points\'], '
               'ros2.Point.fromJson)'));
       expect(code, contains('points.map((ros2.Point e) => e.toJson())'));

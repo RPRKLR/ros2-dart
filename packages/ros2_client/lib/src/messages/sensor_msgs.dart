@@ -26,11 +26,11 @@ final class RosImage implements RosMessage {
 
   factory RosImage.fromJson(Map<String, Object?> json) => RosImage(
         header: Field.asMessage(json['header'], Header.fromJson),
-        height: Field.asInt(json['height']),
-        width: Field.asInt(json['width']),
-        encoding: Field.asString(json['encoding']),
-        isBigendian: Field.asInt(json['is_bigendian']),
-        step: Field.asInt(json['step']),
+        height: Field.intAt(json, 'height'),
+        width: Field.intAt(json, 'width'),
+        encoding: Field.stringAt(json, 'encoding'),
+        isBigendian: Field.intAt(json, 'is_bigendian'),
+        step: Field.intAt(json, 'step'),
         data: Field.asBytes(json['data']),
       );
 
@@ -111,7 +111,7 @@ final class CompressedImage implements RosMessage {
   factory CompressedImage.fromJson(Map<String, Object?> json) =>
       CompressedImage(
         header: Field.asMessage(json['header'], Header.fromJson),
-        format: Field.asString(json['format']),
+        format: Field.stringAt(json, 'format'),
         data: Field.asBytes(json['data']),
       );
 
@@ -168,13 +168,13 @@ final class LaserScan implements RosMessage {
 
   factory LaserScan.fromJson(Map<String, Object?> json) => LaserScan(
         header: Field.asMessage(json['header'], Header.fromJson),
-        angleMin: Field.asDouble(json['angle_min']),
-        angleMax: Field.asDouble(json['angle_max']),
-        angleIncrement: Field.asDouble(json['angle_increment']),
-        timeIncrement: Field.asDouble(json['time_increment']),
-        scanTime: Field.asDouble(json['scan_time']),
-        rangeMin: Field.asDouble(json['range_min']),
-        rangeMax: Field.asDouble(json['range_max']),
+        angleMin: Field.doubleAt(json, 'angle_min'),
+        angleMax: Field.doubleAt(json, 'angle_max'),
+        angleIncrement: Field.doubleAt(json, 'angle_increment'),
+        timeIncrement: Field.doubleAt(json, 'time_increment'),
+        scanTime: Field.doubleAt(json, 'scan_time'),
+        rangeMin: Field.doubleAt(json, 'range_min'),
+        rangeMax: Field.doubleAt(json, 'range_max'),
         ranges: Field.asFloat32List(json['ranges']),
         intensities: Field.asFloat32List(json['intensities']),
       );
@@ -371,13 +371,13 @@ final class BatteryState implements RosMessage {
 
   factory BatteryState.fromJson(Map<String, Object?> json) => BatteryState(
         header: Field.asMessage(json['header'], Header.fromJson),
-        voltage: Field.asDouble(json['voltage']),
-        current: Field.asDouble(json['current']),
-        charge: Field.asDouble(json['charge']),
-        capacity: Field.asDouble(json['capacity']),
-        percentage: Field.asDouble(json['percentage']),
-        powerSupplyStatus: Field.asInt(json['power_supply_status']),
-        present: Field.asBool(json['present']),
+        voltage: Field.doubleAt(json, 'voltage'),
+        current: Field.doubleAt(json, 'current'),
+        charge: Field.doubleAt(json, 'charge'),
+        capacity: Field.doubleAt(json, 'capacity'),
+        percentage: Field.doubleAt(json, 'percentage'),
+        powerSupplyStatus: Field.intAt(json, 'power_supply_status'),
+        present: Field.boolAt(json, 'present'),
       );
 
   final Header header;
@@ -445,9 +445,9 @@ final class NavSatFix implements RosMessage {
 
   factory NavSatFix.fromJson(Map<String, Object?> json) => NavSatFix(
         header: Field.asMessage(json['header'], Header.fromJson),
-        latitude: Field.asDouble(json['latitude']),
-        longitude: Field.asDouble(json['longitude']),
-        altitude: Field.asDouble(json['altitude']),
+        latitude: Field.doubleAt(json, 'latitude'),
+        longitude: Field.doubleAt(json, 'longitude'),
+        altitude: Field.doubleAt(json, 'altitude'),
         status: Field.asInt(
             (json['status'] as Map<String, Object?>?)?['status'] ?? -1),
         service: Field.asInt(
@@ -513,10 +513,10 @@ final class PointField implements RosMessage {
   });
 
   factory PointField.fromJson(Map<String, Object?> json) => PointField(
-        name: Field.asString(json['name']),
-        offset: Field.asInt(json['offset']),
-        datatype: Field.asInt(json['datatype']),
-        count: Field.asInt(json['count']),
+        name: Field.stringAt(json, 'name'),
+        offset: Field.intAt(json, 'offset'),
+        datatype: Field.intAt(json, 'datatype'),
+        count: Field.intAt(json, 'count', 1),
       );
 
   static const int int8 = 1;
@@ -600,14 +600,17 @@ final class PointCloud2 implements RosMessage {
 
   factory PointCloud2.fromJson(Map<String, Object?> json) => PointCloud2(
         header: Field.asMessage(json['header'], Header.fromJson),
-        height: Field.asInt(json['height']),
-        width: Field.asInt(json['width']),
+        // Absent keys take the definition's defaults, not the converters'
+        // zeros: height 0 makes every point unreadable, and is_dense false
+        // claims invalid points that are not there.
+        height: Field.intAt(json, 'height', 1),
+        width: Field.intAt(json, 'width'),
         fields: Field.asList(json['fields'], PointField.fromJson),
-        isBigendian: Field.asBool(json['is_bigendian']),
-        pointStep: Field.asInt(json['point_step']),
-        rowStep: Field.asInt(json['row_step']),
+        isBigendian: Field.boolAt(json, 'is_bigendian'),
+        pointStep: Field.intAt(json, 'point_step'),
+        rowStep: Field.intAt(json, 'row_step'),
         data: Field.asBytes(json['data']),
-        isDense: Field.asBool(json['is_dense']),
+        isDense: Field.boolAt(json, 'is_dense', true),
       );
 
   static final Uint8List _noBytes = Uint8List(0);
@@ -662,6 +665,24 @@ final class PointCloud2 implements RosMessage {
   @override
   String toString() => 'PointCloud2(${width}x$height, '
       '${fields.map((f) => f.name).join(",")}, ${data.lengthInBytes} bytes)';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PointCloud2 &&
+          other.header == header &&
+          other.height == height &&
+          other.width == width &&
+          other.isBigendian == isBigendian &&
+          other.pointStep == pointStep &&
+          other.rowStep == rowStep &&
+          other.isDense == isDense &&
+          _listEquals(other.fields, fields) &&
+          _listEquals(other.data, data));
+
+  @override
+  int get hashCode => Object.hash(header, height, width, pointStep, rowStep,
+      isDense, Object.hashAll(fields), Object.hashAll(data));
 }
 
 void registerSensorMsgs() {
