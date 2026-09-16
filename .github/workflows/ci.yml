@@ -21,6 +21,12 @@ jobs:
         with:
           sdk: stable
 
+      # The packages are versioned together, so a dependent can require a
+      # ros2_client that is not on pub.dev yet. The overrides are gitignored;
+      # without this step CI resolves the published version and fails.
+      - name: Build against the sibling ros2_client
+        run: ./tool/link_local.sh
+
       - name: ros2_client — install
         working-directory: packages/ros2_client
         run: dart pub get
@@ -64,6 +70,12 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+
+      # The packages are versioned together, so a dependent can require a
+      # ros2_client that is not on pub.dev yet. The overrides are gitignored;
+      # without this step CI resolves the published version and fails.
+      - name: Build against the sibling ros2_client
+        run: ./tool/link_local.sh
 
       - working-directory: packages/ros2_flutter
         run: flutter pub get
@@ -123,6 +135,12 @@ jobs:
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: stable
+      # The packages are versioned together, so a dependent can require a
+      # ros2_client that is not on pub.dev yet. The overrides are gitignored;
+      # without this step CI resolves the published version and fails.
+      - name: Build against the sibling ros2_client
+        run: ./tool/link_local.sh
+
       - working-directory: packages/ros2_client
         run: dart pub publish --dry-run
       - working-directory: packages/ros2_msgs_common
