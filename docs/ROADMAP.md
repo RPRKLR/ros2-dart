@@ -495,7 +495,7 @@ largest single chunk of work left.
 
 ## Publishing
 
-0.1.0 is on pub.dev, all three packages. Everything since is local.
+0.1.0 is on pub.dev, all three packages. 0.2.0 is pushed, not yet published.
 
 - ✅ Repository URL set in all three pubspecs.
 - ✅ `LICENSE` present (BSD-3-Clause, matching ROS convention).
@@ -509,18 +509,28 @@ largest single chunk of work left.
 
 For 0.2.0, in this order — the constraint is the same one 0.1.0 had:
 
+- [x] **Dry-run all three.** Clean apart from the hint that
+      `pubspec_overrides.yaml` is in use.
+- [ ] **CI green on GitHub**, then merge to `main`: pub.dev resolves the
+      README's relative links and GIFs against the repository's default
+      branch, so `main` has to carry the 0.2.0 docs before the pages go live.
 - [ ] **Publish `ros2_client` 0.2.0 first.** The other two already declare
       `ros2_client: ^0.2.0`, so neither resolves from pub until it is up.
-- [ ] **Then `ros2_msgs_common`, then `ros2_flutter`.**
-- [ ] **Dry-run all three**, which has only ever been done for `ros2_client`.
+- [ ] **Then `ros2_msgs_common`, then `ros2_flutter`**, with the overrides
+      removed (`rm packages/*/pubspec_overrides.yaml`) so they resolve the
+      published `ros2_client`. `tool/link_local.sh` puts them back.
 
-## No CI yet
+## CI
 
-Everything above — 247 tests, the real-bridge harness, the wire benchmark, the
-byte-identical regeneration of `ros2_msgs_common`, the web and WASM compiles —
-runs only when someone runs it. Every serious bug this project has had was
-found by *running* something rather than reading it, which is the argument for
-automating exactly these.
+`.github/workflows/ci.yml` runs format, analyze and the tests for all three
+packages (the end-to-end suite against a local Tornado rosbridge), the web and
+WASM compiles, and the publish dry-runs, with the dependents built against the
+sibling `ros2_client`. Its first run on GitHub caught two things the local runs
+could not: the gitignored path overrides, and GIF-frame goldens that exist only
+on the machine that rendered them.
+
+Still manual: the real-bridge harness, the wire benchmark, and the
+byte-identical regeneration of `ros2_msgs_common`.
 
 ## Validation against a real bridge ✅
 
