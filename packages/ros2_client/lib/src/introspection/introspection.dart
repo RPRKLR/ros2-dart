@@ -294,12 +294,11 @@ extension Ros2Introspection on Ros2Client {
   ///
   /// Two caveats, both properties of `rosapi` rather than this client:
   ///
-  ///  * it is **slow** — measured at 20+ seconds on an idle graph, because
-  ///    `rosapi` queries every node and waits for all of them;
-  ///  * it returns an empty list unless the bridge was launched with a
-  ///    `params_glob`, which defaults to empty and blocks enumeration:
-  ///    `ros2 launch rosbridge_server rosbridge_websocket_launch.xml
-  ///    params_glob:="[*]"`.
+  ///  * it is **slow** — seconds, and 20+ on a busy graph, because `rosapi`
+  ///    queries every node and waits for all of them;
+  ///  * a bridge launched with a `params_glob` lists only the names it
+  ///    matches. Without one, current rosbridge (2.0.8 on Humble, 2.7.1 on
+  ///    Jazzy) lists them all.
   ///
   /// [getParam] and [setParam] need neither — they respond in milliseconds and
   /// work without a glob, so prefer them when you already know the name.

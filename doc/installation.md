@@ -26,8 +26,7 @@ Defaults that will bite you, all verified against `rosbridge_suite` 2.0.7:
 ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
   max_message_size:=50000000 \
   call_services_in_new_thread:=true \
-  send_action_goals_in_new_thread:=true \
-  params_glob:="[*]"
+  send_action_goals_in_new_thread:=true
 ```
 
 | Argument | Why |
@@ -35,7 +34,11 @@ ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
 | `max_message_size` | **A CBOR message larger than this is silently dropped.** Default is 10 MB under the launch file, 1 MB for a bare node. A 640×480 `rgb8` image is 900 KB of CBOR; 1080p is ~6 MB. See [the size ceiling](#the-cbor-size-ceiling). |
 | `call_services_in_new_thread` | Defaults false. A service call that never returns then wedges *the whole connection* — no further subscribes, publishes or unsubscribes — for as long as it hangs, and the default service timeout is "wait forever". |
 | `send_action_goals_in_new_thread` | Defaults false. While a goal runs, every other message from that client is queued and unprocessed, and `cancel()` cannot be delivered at all. |
-| `params_glob` | Without it, `listParams()` returns an empty list after ~20 s. `getParam`/`setParam` work regardless. |
+
+Do not add `params_glob:="[*]"`, which earlier versions of this guide
+recommended. Current rosbridge (2.0.8 on Humble, 2.7.1 on Jazzy) lists every
+parameter without a glob, and that value stops the launch on both: YAML reads
+`*` as an alias.
 
 For TLS, `rosbridge_websocket_launch.xml` takes `ssl:=true`, `certfile:=` and
 `keyfile:=`, and you then connect with `wss://`.

@@ -630,9 +630,12 @@ Reading `rosbridge_library/internal/qos_extraction.py` gave the real contract:
 A fake server can never catch this class of bug, because the fake agrees with
 whatever the client sends. Unit tests now pin the exact wire strings.
 
-**`rosapi/get_param_names` takes 20+ seconds** and returns an empty list unless
-the bridge is launched with `params_glob:="[*]"`. Confirmed to be `rosapi`, not
-the client — `ros2 service call` is equally slow. Introspection calls now
+**`rosapi/get_param_names` takes 20+ seconds** on a busy graph. Confirmed to be
+`rosapi`, not the client — `ros2 service call` is equally slow. The glob advice
+recorded here originally, `params_glob:="[*]"`, turned out wrong on 2026-09-16:
+current launch files parse it as YAML and fail, stopping the whole launch on
+Humble and Jazzy alike, and rosbridge 2.0.8 and 2.7.1 list every parameter
+with no glob at all. Introspection calls now
 default to a 45 s timeout; `getParam`/`setParam` respond in ~10 ms and need no
 glob.
 

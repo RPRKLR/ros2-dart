@@ -13,8 +13,7 @@ source /opt/ros/humble/setup.bash
 ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
   max_message_size:=50000000 \
   call_services_in_new_thread:=true \
-  send_action_goals_in_new_thread:=true \
-  params_glob:="[*]"
+  send_action_goals_in_new_thread:=true
 ```
 
 ## `sensor_pub.py` — large messages
