@@ -89,10 +89,12 @@ jobs:
         run: flutter analyze --fatal-infos
 
       # Includes test/goldens/render_test.dart, which fails if a widget's
-      # rendered output drifts from the committed screenshots.
+      # rendered output drifts from the committed screenshots. Excludes the
+      # animation frames: they only feed the README GIFs, and are gitignored,
+      # so there is nothing in a checkout to compare them against.
       - name: test
         working-directory: packages/ros2_flutter
-        run: flutter test
+        run: flutter test --exclude-tags animation
 
   web:
     name: Web and WASM compile
