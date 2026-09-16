@@ -84,7 +84,12 @@ final class FakeBridge implements RosTransport {
 
   /// Pushes an action result for the most recent goal.
   void sendResult(Map<String, Object?> values,
-      {int status = 4, bool result = true}) {
+          {int status = 4, bool result = true}) =>
+      sendResultRaw(values, status: status, result: result);
+
+  /// As [sendResult], but `values` may be anything: rosbridge sends the
+  /// exception text as a string when it fails a goal itself.
+  void sendResultRaw(Object? values, {int? status, bool result = true}) {
     final goal = lastOf('send_action_goal');
     emit(jsonEncode({
       'op': 'action_result',

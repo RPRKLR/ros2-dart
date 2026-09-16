@@ -293,6 +293,64 @@ void main() {
       );
     });
 
+    test('an aborted goal keeps the result that says why', () async {
+      // Verified against rosbridge 2.7.1 on Jazzy: Nav2-style servers abort
+      // with the reason in the result, and the bridge forwards it as values.
+      await connect();
+      final handle =
+          ros.sendGoal<_Goal, int, String>('/fib', _Goal(1), codec: codec);
+      await pump();
+      bridge.sendResult({'sequence': 'partial'},
+          status: GoalStatus.aborted.value);
+
+      await expectLater(
+        handle.result,
+        throwsA(isA<ActionFailedException>()
+            .having((e) => e.status, 'status', GoalStatus.aborted)
+            .having((e) => e.result, 'result', 'partial')),
+      );
+    });
+
+    test('a result that fails to decode says so instead of vanishing',
+        () async {
+      await connect();
+      final strict = ActionCodec<_Goal, int, String>(
+        actionType: 'test_msgs/action/Fibonacci',
+        encodeGoal: (g) => {'order': g.order},
+        decodeFeedback: (json) => 0,
+        decodeResult: (json) => throw const FormatException('bad result'),
+      );
+      final handle =
+          ros.sendGoal<_Goal, int, String>('/fib', _Goal(2), codec: strict);
+      await pump();
+      bridge.sendResult({'sequence': 'x'}, status: GoalStatus.aborted.value);
+
+      await expectLater(
+        handle.result,
+        throwsA(isA<ActionFailedException>()
+            .having((e) => e.result, 'result', isNull)
+            .having((e) => e.message, 'message', contains('bad result'))),
+      );
+    });
+
+    test('a goal the bridge itself fails reports the bridge error', () async {
+      // rosbridge sends result: false with the exception text as values.
+      await connect();
+      final handle =
+          ros.sendGoal<_Goal, int, String>('/fib', _Goal(1), codec: codec);
+      await pump();
+      bridge.sendResultRaw('Action type not found',
+          status: GoalStatus.unknown.value, result: false);
+
+      await expectLater(
+        handle.result,
+        throwsA(isA<ActionFailedException>()
+            .having((e) => e.result, 'result', isNull)
+            .having((e) => e.message, 'message',
+                contains('Action type not found'))),
+      );
+    });
+
     test('a goal with no reply fails once its timeout elapses', () async {
       await connect();
       // A goal sent to an action server that does not exist gets no reply at

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+**Fixed**
+
+* An aborted goal kept nothing of its result. `ActionFailedException.result`
+  now holds it, decoded like a successful one. It is often the only place that
+  says why: Nav2 on Jazzy aborts a failed navigation with `error_code` and
+  `error_msg` in the result, and until now they were discarded. Verified
+  against rosbridge 2.7.1, which forwards them.
+* A goal the bridge failed itself reported only "Goal ended as unknown".
+  rosbridge sends the exception text, which the message now includes.
+  A result that arrives but cannot be decoded says so in the message too,
+  rather than leaving `result` null without explanation.
+
 ## 0.2.0
 
 A minor bump rather than a patch, because pub reads `^0.1.0` as

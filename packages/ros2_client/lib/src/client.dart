@@ -748,16 +748,35 @@ final class Ros2Client {
           feedbackController.add(resolved.decodeFeedback(json));
         }
       },
-      onResult: (json, status, ok) {
+      onResult: (values, status, ok) {
         if (resultCompleter.isCompleted) return;
+        final json = values is Map<String, Object?> ? values : null;
         if (ok && status.isTerminal && status == GoalStatus.succeeded) {
-          resultCompleter.complete(resolved.decodeResult(json));
+          resultCompleter.complete(resolved.decodeResult(json ?? const {}));
         } else if (ok && status == GoalStatus.unknown) {
           // Servers that omit status on success still deliver a result.
-          resultCompleter.complete(resolved.decodeResult(json));
-        } else {
+          resultCompleter.complete(resolved.decodeResult(json ?? const {}));
+        } else if (!ok) {
+          // The bridge failed the goal itself, and `values` is its error text.
           resultCompleter.completeError(ActionFailedException(
-              actionName, status, 'Goal ended as ${status.name}'));
+              actionName,
+              status,
+              'Goal ended as ${status.name}: ${values ?? 'no reason'}'));
+        } else {
+          // A server that aborts still sends a result, and it is often the
+          // only place that says why -- Nav2's error_code, for one.
+          Object? result;
+          var message = 'Goal ended as ${status.name}';
+          if (json != null) {
+            try {
+              result = resolved.decodeResult(json);
+            } catch (e) {
+              message = '$message; its result could not be decoded: $e';
+            }
+          }
+          resultCompleter.completeError(ActionFailedException(
+              actionName, status, message,
+              result: result));
         }
         handle._timeoutTimer?.cancel();
         unawaited(feedbackController.close());
@@ -1041,9 +1060,8 @@ final class Ros2Client {
   void _handleActionResult(Map<String, Object?> message) {
     final goal = _activeGoals[message['id']];
     if (goal == null) return;
-    final values = message['values'];
     goal.onResult(
-      values is Map<String, Object?> ? values : const {},
+      message['values'],
       GoalStatus.fromValue(message['status'] as int?),
       message['result'] != false,
     );
@@ -1303,7 +1321,7 @@ final class _ActiveGoal {
 
   final String actionName;
   final void Function(Map<String, Object?>) onFeedback;
-  final void Function(Map<String, Object?>, GoalStatus, bool) onResult;
+  final void Function(Object?, GoalStatus, bool) onResult;
   final void Function(Object) onError;
 
   void fail(Object error) => onError(error);

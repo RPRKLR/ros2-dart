@@ -70,10 +70,26 @@ abstract final class ActionRegistry {
 
 /// Thrown when an action goal is rejected or ends in a non-success state.
 final class ActionFailedException implements Exception {
-  ActionFailedException(this.action, this.status, this.message);
+  ActionFailedException(this.action, this.status, this.message, {this.result});
   final String action;
   final GoalStatus status;
   final String message;
+
+  /// The result the server sent with the failure, decoded like a successful
+  /// one, or `null` when there was none: a timeout, a lost connection, or a
+  /// bridge that failed the goal itself.
+  ///
+  /// An aborted goal usually has one, and it is often the only place that
+  /// says why. Nav2 on Jazzy reports a failed navigation as an aborted goal
+  /// whose result holds `error_code` and `error_msg`:
+  ///
+  /// ```dart
+  /// } on ActionFailedException catch (e) {
+  ///   final result = e.result as NavigateToPoseResult?;
+  ///   print('${e.status.name}: ${result?.errorMsg}');
+  /// }
+  /// ```
+  final Object? result;
 
   @override
   String toString() =>
