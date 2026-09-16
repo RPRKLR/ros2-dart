@@ -18,6 +18,53 @@ Nothing published offers typed messages, ROS 2 actions, QoS control, or
 resilience. That is the opening this project targets — the gap is real and
 nobody currently holds it.
 
+## Next release: 0.3.0
+
+The `vX.Y` headings below are feature groups, not package versions: 0.2.0
+shipped transforms, backpressure and TLS from three of them. 0.3.0 is scoped
+here instead.
+
+**Theme: a robot you can navigate from the app.** The widgets nobody else
+offers, built on the TF support that already works, plus the checks that stand
+between "compiles" and "runs".
+
+### Widgets (`ros2_flutter`)
+
+- [ ] **`RosMapView`**: `nav_msgs/OccupancyGrid` (already bundled) rendered
+      once per map update into a cached image, never per frame; pan and zoom;
+      the robot's pose overlaid from TF (`map -> base_link`). The map arrives
+      over `transient_local`, so a late-opened view still gets it.
+- [ ] **Goal picker on the map**: press to place, drag to aim, and an
+      `onGoal(PoseStamped)` callback. It sends nothing itself, so
+      `ros2_flutter` keeps depending on `ros2_client` alone; the example shows
+      sending `NavigateToPose` with `ros2_msgs_common`.
+- [ ] **Diagnostics panel**. `DiagnosticArray` lives in `ros2_msgs_common`,
+      the same dependency question the goal picker avoided. Decide before
+      building: take a plain status model and let the app adapt, or decode
+      the few fields it needs without the generated class.
+
+### Verification
+
+- [ ] **A browser connects to a real bridge**: dart2js and WASM builds of the
+      example against rosbridge 2.0.7, topics, a service and an action.
+- [ ] **A jumping `/clock`**: sim time reset under a running `TfListener`, as
+      happens on every Gazebo restart. Decide what the buffer should do, then
+      test it against a real bridge.
+- [ ] **The example runs with `flutter run`** from a fresh clone.
+
+### Jazzy
+
+- [ ] Run the real-bridge and real-tf checks against Jazzy's rosbridge, in a
+      `ros:jazzy` container.
+- [ ] Regenerate `ros2_msgs_common` from Jazzy and diff it against Humble.
+      Identical: say both are supported. Different: decide between one
+      package that covers both and a separate Jazzy build, which is a
+      packaging question, not a codegen one.
+
+### Out of scope
+
+Foxglove transport (needs re-justifying, see v0.5), URDF view, deflate.
+
 ## Design decisions already locked in
 
 **rosbridge over native DDS.** A pure-Dart DDS/RTPS stack is 6–12 months of
@@ -454,9 +501,9 @@ largest single chunk of work left.
   to the next retry rather than saying "reconnecting" at an operator who
   cannot tell a second from half a minute. Landed early because the example
   app had already hand-rolled a worse version of it.
-- Occupancy grid / map widget with pan, zoom and pose overlay
-- 2D nav goal picker that sends a `NavigateToPose` action
-- Diagnostics panel driven by `diagnostic_msgs`
+- Occupancy grid / map widget with pan, zoom and pose overlay *(0.3.0)*
+- 2D nav goal picker *(0.3.0, as a callback rather than sending the action)*
+- Diagnostics panel driven by `diagnostic_msgs` *(0.3.0)*
 - Robot model view from `/robot_description` (URDF parse + 2D footprint first;
   3D is a much larger commitment)
 - Riverpod and Bloc integration examples — not dependencies
@@ -495,7 +542,7 @@ largest single chunk of work left.
 
 ## Publishing
 
-0.1.0 is on pub.dev, all three packages. 0.2.0 is pushed, not yet published.
+0.2.0 is on pub.dev, all three packages, published 2026-09-16.
 
 - ✅ Repository URL set in all three pubspecs.
 - ✅ `LICENSE` present (BSD-3-Clause, matching ROS convention).
@@ -507,18 +554,18 @@ largest single chunk of work left.
   `ros2_client`. Local development runs on gitignored `pubspec_overrides.yaml`
   files, recreated by `tool/link_local.sh`.
 
-For 0.2.0, in this order — the constraint is the same one 0.1.0 had:
+Releasing, in this order:
 
-- [x] **Dry-run all three.** Clean apart from the hint that
-      `pubspec_overrides.yaml` is in use.
-- [ ] **CI green on GitHub**, then merge to `main`: pub.dev resolves the
-      README's relative links and GIFs against the repository's default
-      branch, so `main` has to carry the 0.2.0 docs before the pages go live.
-- [ ] **Publish `ros2_client` 0.2.0 first.** The other two already declare
-      `ros2_client: ^0.2.0`, so neither resolves from pub until it is up.
-- [ ] **Then `ros2_msgs_common`, then `ros2_flutter`**, with the overrides
-      removed (`rm packages/*/pubspec_overrides.yaml`) so they resolve the
-      published `ros2_client`. `tool/link_local.sh` puts them back.
+1. CI green on the release branch, then merge to `main`. pub.dev resolves the
+   README's relative links and GIFs against the default branch, so `main` has
+   to carry the docs before the pages go live.
+2. Dry-run all three.
+3. `rm packages/*/pubspec_overrides.yaml`, so the dependents resolve the
+   published `ros2_client` rather than the sibling.
+4. Publish `ros2_client`, then `ros2_msgs_common`, then `ros2_flutter`. For a
+   minute or two after the first upload, `pub get` in the dependents can still
+   report that no version matches; pub's listing lags the website. Retry.
+5. `tool/link_local.sh`, and tag the release on `main`.
 
 ## CI
 
@@ -595,8 +642,6 @@ glob.
   builds the whole public surface under both dart2js and WASM, and all three
   packages carry `platform:web` and `is:wasm-ready` on pub.dev — but nothing
   has yet opened a socket to a bridge from a browser.
-- CI itself has never executed: every job was run locally, step by step, but
-  the workflow has not run on GitHub because nothing is pushed yet.
 
 ## Large messages, verified against a real bridge ✅
 
