@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+**Jazzy.** Every library now exists once per distro, under
+`package:ros2_msgs_common/humble/...` and `package:ros2_msgs_common/jazzy/...`,
+registered with `registerHumbleMessages()` or `registerJazzyMessages()`. Use
+the one your robot runs: the distros disagree on the wire, and rosbridge
+refuses a published field its distro does not define. The Jazzy set is 282
+messages against Humble's 221, adds `geographic_msgs`, and gives navigation
+results the `error_code` and `error_msg` Humble's lack.
+
+Nothing existing changes meaning. The imports without a distro and
+`registerCommonMessages()` are Humble, and the Humble output is byte-identical
+to 0.2.0's.
+
+`tool/regenerate_in_docker.sh <distro>` regenerates from the official ROS
+image, for a distro that is not installed locally.
+
 ## 0.2.0
 
 Requires `ros2_client` 0.2.0: the regenerated code uses the key-aware field

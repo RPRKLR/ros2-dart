@@ -4,14 +4,16 @@
 import 'dart:io';
 
 import 'package:ros2_client/ros2_client.dart';
-import 'package:ros2_msgs_common/diagnostic_msgs.dart';
+import 'package:ros2_msgs_common/jazzy/diagnostic_msgs.dart';
+import 'package:ros2_msgs_common/jazzy/visualization_msgs.dart';
 import 'package:ros2_msgs_common/ros2_msgs_common.dart';
-import 'package:ros2_msgs_common/visualization_msgs.dart';
 
 Future<void> main(List<String> args) async {
-  // Both registries: the client's core types, then everything in this package.
+  // Both registries: the client's core types, then this package's set for the
+  // robot's distro. A Humble robot imports from humble/ and calls
+  // registerHumbleMessages() instead.
   registerStandardMessages();
-  registerCommonMessages();
+  registerJazzyMessages();
 
   final uri = Uri.parse(args.isEmpty ? 'ws://localhost:9090' : args.first);
   final ros = Ros2Client(uri);
