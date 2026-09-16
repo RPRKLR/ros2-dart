@@ -85,6 +85,20 @@ Note that `geometry_msgs` and `std_msgs` here hold only the types
 `Wrench` comes from here. Both are in scope at once, and neither shadows the
 other — a generated class that referenced `Twist` refers to the client's.
 
+## Checking a distro against a real robot
+
+`example/real_distro_check.dart` confirms, on a live bridge, that the robot's
+distro accepts its own classes and refuses the other distro's, and that an
+aborted navigation goal still carries its result:
+
+```bash
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+python3 tool/robot_fixtures/nav_result_server.py
+dart run example/real_distro_check.dart ws://127.0.0.1:9090
+```
+
+It passes against rosbridge 2.0.8 on Humble and 2.7.1 on Jazzy.
+
 ## Regenerating
 
 The output is committed, so nothing here needs a ROS install at build time.
