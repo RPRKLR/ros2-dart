@@ -52,14 +52,34 @@ between "compiles" and "runs".
       test it against a real bridge.
 - [ ] **The example runs with `flutter run`** from a fresh clone.
 
-### Jazzy
+### Jazzy ✅
 
-- [ ] Run the real-bridge and real-tf checks against Jazzy's rosbridge, in a
-      `ros:jazzy` container.
-- [ ] Regenerate `ros2_msgs_common` from Jazzy and diff it against Humble.
-      Identical: say both are supported. Different: decide between one
-      package that covers both and a separate Jazzy build, which is a
-      packaging question, not a codegen one.
+- [x] **The client needs no changes.** Against rosbridge 2.7.1 in a
+      `ros:jazzy` container, every real check passes: bridge 18/18,
+      connection 6/6, tf, and large messages. `probeBridge()` reports Jazzy
+      with actions.
+- [x] **`ros2_msgs_common` could not serve both, so it now ships both.** Jazzy
+      regenerates to 282 messages against Humble's 221, and the differences
+      reach the wire: navigation results gained `error_code`/`error_msg`,
+      `FollowWaypoints.missed_waypoints` went from `int32[]` to
+      `MissedWaypoint[]`, and `JointTrajectoryControllerState` lost
+      `desired`/`actual`. rosbridge refuses a published field its distro does
+      not define, confirmed in both directions by
+      `example/real_distro_check.dart`. Libraries now live under `humble/` and
+      `jazzy/`; the unprefixed paths stay Humble.
+      `tool/regenerate_in_docker.sh` regenerates either distro from the
+      official image, and reproduces the local Humble output byte for byte.
+
+Found along the way, all fixed and verified on both distros:
+
+- **An aborted goal lost its result.** Nav2 on Jazzy says why a navigation
+  failed only in the aborted goal's result, and the client discarded it. Now
+  `ActionFailedException.result`. This matters directly for the goal picker.
+- **Mismatched definitions decoded as plausible zeros.** A Humble class read
+  Jazzy's missed-waypoint messages as indices of `0`. The scalar decoders now
+  throw on a message or list.
+- **The documented `params_glob:="[*]"` stopped the launch** on both distros,
+  and current rosbridge needs no glob to list parameters.
 
 ### Out of scope
 
@@ -226,8 +246,8 @@ bundled types excluded still claimed to have written them.
 - `build.yaml`-compatible output, to fit normal Flutter build workflows
 - An online run against a robot with genuinely custom interfaces; everything
   so far was verified against stock Humble packages
-- `ros2_msgs_common` targets Humble only. Whether a Jazzy build differs enough
-  to need a second published version is unknown and untested.
+- ~~`ros2_msgs_common` targets Humble only.~~ Ships Humble and Jazzy sets
+  since 0.3.0; see "Next release: 0.3.0".
 
 ## v0.3 — Transforms ✅ *shipped*
 
@@ -727,5 +747,8 @@ accident.
   a call to a service that does not exist parks the bridge's only queue thread
   for the life of the connection, so the probe would wedge the link it was
   diagnosing.
+- **Verified distros: Humble (rosbridge 2.0.8) and Jazzy (2.7.1).** The
+  client runs unchanged on both; `ros2_msgs_common` ships a set per distro,
+  and an app must use its robot's.
 - The bundled messages target ROS 2 (`pkg/msg/Type` naming). ROS 1 short names
   are accepted as registry aliases but ROS 1 is not a support target.
