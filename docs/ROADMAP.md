@@ -47,10 +47,23 @@ between "compiles" and "runs".
 
 - [ ] **A browser connects to a real bridge**: dart2js and WASM builds of the
       example against rosbridge 2.0.7, topics, a service and an action.
-- [ ] **A jumping `/clock`**: sim time reset under a running `TfListener`, as
-      happens on every Gazebo restart. Decide what the buffer should do, then
-      test it against a real bridge.
-- [ ] **The example runs with `flutter run`** from a fresh clone.
+      *Topics done 2026-09-23*: both builds of the example, served from a
+      fresh clone into headless Chrome against rosbridge 2.0.8, decode
+      `BatteryState`, `Odometry`, a CBOR `LaserScan` with `inf`/`nan` and a
+      JPEG `CompressedImage`. Still open: a service and an action from the
+      browser, which the example never makes.
+- [x] **A jumping `/clock`**: sim time reset under a running `TfListener`, as
+      happens on every Gazebo restart. It froze: each post-restart sample was
+      trimmed on arrival and lookups answered the pre-restart pose forever.
+      A jump back now re-baselines after ten samples, as a jump forward
+      already did (200 ms at 50 Hz). `example/real_clock_jump_check.dart`
+      with `tool/robot_fixtures/sim_clock_pub.py` passes against rosbridge
+      2.0.8 and fails with the fix reverted.
+- [x] **The example runs with `flutter run`** from a fresh clone. The
+      platform directories are committed; `flutter pub get` and
+      `flutter analyze` are clean, and `flutter run -d chrome` works as above.
+      Linux desktop was not built here: this machine lacks `clang++` and
+      GTK headers, which `flutter doctor` names.
 
 ### Jazzy ✅
 
