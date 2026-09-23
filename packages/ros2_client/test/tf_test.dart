@@ -414,6 +414,43 @@ void main() {
       expect(buffer.lookup('map', 'base')!.translation.x, 50);
     });
 
+    test('sim time jumping back to zero is followed, not frozen', () {
+      // A Gazebo restart: /clock goes from 500 s back to 0 while the app keeps
+      // running. Every new sample is older than the cache window measured
+      // from the stale newest one, so each was trimmed on arrival and the
+      // latest lookup answered the pre-restart pose forever, without error.
+      final buffer = TfBuffer(cacheTime: const Duration(seconds: 10));
+      for (var i = 0; i <= 20; i++) {
+        buffer.setTransform(tf('map', 'base', x: 7, sec: 500 + i));
+      }
+      for (var i = 0; i < 15; i++) {
+        buffer.setTransform(tf('map', 'base',
+            x: i.toDouble(), sec: 0, nanosec: (i + 1) * 20000000));
+      }
+      expect(buffer.lookup('map', 'base')!.translation.x, 14);
+      expect(
+          buffer
+              .lookup('map', 'base', time: RosTime(sec: 0, nanosec: 200000000))!
+              .translation
+              .x,
+          closeTo(9, 1e-9));
+      expect(buffer.lookup('map', 'base', time: RosTime(sec: 510)), isNull,
+          reason: 'the pre-restart history no longer applies');
+    });
+
+    test('one late-stamped sample does not unseat the buffer', () {
+      final buffer = TfBuffer(cacheTime: const Duration(seconds: 10));
+      for (var i = 0; i <= 20; i++) {
+        buffer.setTransform(tf('map', 'base', x: i.toDouble(), sec: 1000 + i));
+      }
+      // A node whose clock is a minute slow.
+      buffer.setTransform(tf('map', 'base', x: -1, sec: 940));
+      expect(buffer.lookup('map', 'base')!.translation.x, 20);
+      expect(
+          buffer.lookup('map', 'base', time: RosTime(sec: 1015))!.translation.x,
+          15);
+    });
+
     test('a cycle is reported rather than answered inconsistently', () {
       final buffer = TfBuffer();
       buffer.setTransform(tf('a', 'b', x: 1), isStatic: true);

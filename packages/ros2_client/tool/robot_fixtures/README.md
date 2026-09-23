@@ -45,6 +45,22 @@ python3 tf_pub.py &
 cd ../.. && dart run example/real_tf_check.dart
 ```
 
+## `sim_clock_pub.py` — a simulator that restarts
+
+Publishes `/clock` in 6 s phases that start alternately from 500 s and from
+0 s, as Gazebo does on every world reset, and a `use_sim_time` node
+broadcasting `map -> base_link` stamped from it. The pose encodes the stamp
+(`x` is sim seconds / 100), so the checker can tell which side of a restart
+an answer came from.
+
+```bash
+python3 sim_clock_pub.py &
+cd ../.. && dart run example/real_clock_jump_check.dart
+```
+
+Covers: the buffer following sim time back to zero, then on, and forward
+again. Before the fix it kept answering the pre-restart pose forever.
+
 ## TLS
 
 `example/secure_connection.dart` needs a bridge launched with TLS instead:

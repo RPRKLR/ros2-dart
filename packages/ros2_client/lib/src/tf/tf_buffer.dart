@@ -36,11 +36,11 @@ final class _FrameHistory {
 
   bool get isStatic => staticTransform != null;
 
-  /// Consecutive samples rejected for being implausibly far ahead.
-  int _futureRejects = 0;
+  /// Consecutive samples rejected for being implausibly far from the rest.
+  int _outlierRejects = 0;
 
   /// How many in a row before the jump is accepted as a real clock change.
-  static const int _futureRejectLimit = 10;
+  static const int _outlierRejectLimit = 10;
 
   /// Adds a sample, returning false if it was rejected as a clock outlier.
   ///
@@ -50,17 +50,20 @@ final class _FrameHistory {
   /// the buffer never recovers, and the UI silently stops updating with no
   /// diagnostic. Clock skew between a robot and a bridge is routine.
   ///
-  /// So a sample more than [cacheTime] ahead of everything held is refused.
-  /// If they keep coming, the clock really has moved and the buffer
-  /// re-baselines onto it rather than rejecting good data forever.
+  /// So a sample more than [cacheTime] away from the newest held, in either
+  /// direction, is refused. If they keep coming, the clock really has moved
+  /// and the buffer re-baselines onto it rather than rejecting good data
+  /// forever. Backwards is the common case: sim time restarts from zero on
+  /// every Gazebo restart, and without this each new sample was trimmed on
+  /// arrival while lookups kept answering the pose from before the restart.
   bool insert(_Sample sample, Duration cacheTime) {
     if (samples.isNotEmpty &&
-        sample.stampMicros - samples.last.stampMicros >
+        (sample.stampMicros - samples.last.stampMicros).abs() >
             cacheTime.inMicroseconds) {
-      if (++_futureRejects < _futureRejectLimit) return false;
+      if (++_outlierRejects < _outlierRejectLimit) return false;
       samples.clear();
     }
-    _futureRejects = 0;
+    _outlierRejects = 0;
 
     // Usually append; a late-arriving sample needs an ordered insert.
     if (samples.isEmpty || sample.stampMicros >= samples.last.stampMicros) {

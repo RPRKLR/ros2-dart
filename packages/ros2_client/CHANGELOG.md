@@ -4,6 +4,13 @@
 
 **Fixed**
 
+* `TfBuffer` froze when sim time went back, as it does on every Gazebo
+  restart. Each new sample was older than the cache window measured from the
+  stale newest one, so it was trimmed on arrival, and lookups kept answering
+  the pose from before the restart with no error. A clock jump back is now
+  handled like a jump forward already was: one outlier is ignored, and ten in
+  a row re-baseline the frame onto the new clock. Verified against rosbridge
+  2.0.8 with `example/real_clock_jump_check.dart`, which fails without it.
 * An aborted goal kept nothing of its result. `ActionFailedException.result`
   now holds it, decoded like a successful one. It is often the only place that
   says why: Nav2 on Jazzy aborts a failed navigation with `error_code` and
