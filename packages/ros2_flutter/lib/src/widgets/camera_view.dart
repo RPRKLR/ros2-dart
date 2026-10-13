@@ -86,9 +86,28 @@ class _RosRawImageViewState extends State<RosRawImageView> {
   ui.Image? _decoded;
   bool _decoding = false;
 
+  /// Why the latest frame could not be shown, until one can be.
+  String? _error;
+
   /// The message object last handed to [_ingest], compared by identity so a
   /// retained snapshot is not decoded twice.
   RosImage? _lastIngested;
+
+  /// Bumped on a topic change, so a decode of the old topic's frame that
+  /// finishes afterwards is thrown away rather than shown under the new one.
+  int _generation = 0;
+
+  @override
+  void didUpdateWidget(RosRawImageView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.topic != widget.topic) {
+      _generation++;
+      _decoded?.dispose();
+      _decoded = null;
+      _error = null;
+      _lastIngested = null;
+    }
+  }
 
   @override
   void dispose() {
@@ -108,18 +127,28 @@ class _RosRawImageViewState extends State<RosRawImageView> {
     // vsync, even with the robot disconnected.
     if (identical(frame, _lastIngested)) return;
     _lastIngested = frame;
-    final rgba = _toRgba(frame);
-    if (rgba == null) return;
+    final Uint8List rgba;
+    try {
+      rgba = toRgba(frame);
+    } on FormatException catch (e) {
+      // Deferred: _ingest runs from inside build.
+      scheduleMicrotask(() {
+        if (mounted && e.message != _error) setState(() => _error = e.message);
+      });
+      return;
+    }
+    final generation = _generation;
     _decoding = true;
     try {
       final image = await _decodeRgba(rgba, frame.width, frame.height);
-      if (!mounted) {
+      if (!mounted || generation != _generation) {
         image.dispose();
         return;
       }
       setState(() {
         _decoded?.dispose();
         _decoded = image;
+        _error = null;
       });
     } finally {
       _decoding = false;
@@ -137,6 +166,8 @@ class _RosRawImageViewState extends State<RosRawImageView> {
         if (frame != null && frame.data.isNotEmpty) {
           unawaited(_ingest(frame));
         }
+        final error = _error;
+        if (error != null) return Center(child: Text(error));
         final image = _decoded;
         if (image == null) {
           return const Center(child: CircularProgressIndicator());
@@ -157,48 +188,100 @@ class _RosRawImageViewState extends State<RosRawImageView> {
     );
     return completer.future;
   }
+}
 
-  /// Expands the common ROS encodings to RGBA8888.
-  static Uint8List? _toRgba(RosImage frame) {
-    final pixels = frame.width * frame.height;
-    if (pixels == 0) return null;
-    if (frame.encoding == 'rgba8') {
-      return frame.data.lengthInBytes >= pixels * 4 ? frame.data : null;
-    }
+/// Expands a raw ROS image to RGBA8888 rows, honouring `step`.
+///
+/// 8-bit grey and colour are shown as they are. 16-bit images and `32FC1`
+/// (in practice depth) are stretched to grey between the frame's smallest and
+/// largest valid value, since their units mean nothing as brightness; zero and
+/// non-finite depths are drawn black. `8UC3` and `8UC4` are taken as BGR and
+/// BGRA, which is how OpenCV, and so `cv_bridge`, lays them out.
+///
+/// Throws a [FormatException] naming the problem for an encoding it cannot
+/// show, or for data that does not cover the frame.
+@visibleForTesting
+Uint8List toRgba(RosImage frame) {
+  final width = frame.width, height = frame.height;
+  final encoding = frame.encoding;
+  final bpp = switch (encoding) {
+    'mono8' || '8UC1' => 1,
+    'mono16' || '16UC1' => 2,
+    'rgb8' || 'bgr8' || '8UC3' => 3,
+    'rgba8' || 'bgra8' || '8UC4' || '32FC1' => 4,
+    _ => throw FormatException('Cannot display $encoding images'),
+  };
+  if (width <= 0 || height <= 0) {
+    throw FormatException('Empty $encoding image (${width}x$height)');
+  }
+  // A step of 0 is common from hand-written publishers; take it as unpadded.
+  final step = frame.step > 0 ? frame.step : width * bpp;
+  final src = frame.data;
+  if (step < width * bpp ||
+      src.lengthInBytes < step * (height - 1) + width * bpp) {
+    throw FormatException('Malformed $encoding image: ${src.lengthInBytes} '
+        'bytes for ${width}x$height with step $step');
+  }
 
-    final bpp = frame.bytesPerPixel;
-    if (bpp == null || frame.data.lengthInBytes < pixels * bpp) return null;
+  final out = Uint8List(width * height * 4);
+  void grey(int o, int v) {
+    out[o] = v;
+    out[o + 1] = v;
+    out[o + 2] = v;
+    out[o + 3] = 255;
+  }
 
-    final out = Uint8List(pixels * 4);
-    final src = frame.data;
-    switch (frame.encoding) {
-      case 'rgb8':
-        for (var i = 0, o = 0, s = 0; i < pixels; i++, o += 4, s += 3) {
+  switch (encoding) {
+    case 'mono8' || '8UC1':
+      for (var y = 0, o = 0; y < height; y++) {
+        for (var x = 0, s = y * step; x < width; x++, s++, o += 4) {
+          grey(o, src[s]);
+        }
+      }
+    case 'rgb8' || 'rgba8':
+      for (var y = 0, o = 0; y < height; y++) {
+        for (var x = 0, s = y * step; x < width; x++, s += bpp, o += 4) {
           out[o] = src[s];
           out[o + 1] = src[s + 1];
           out[o + 2] = src[s + 2];
-          out[o + 3] = 255;
+          out[o + 3] = bpp == 4 ? src[s + 3] : 255;
         }
-      case 'bgr8':
-        for (var i = 0, o = 0, s = 0; i < pixels; i++, o += 4, s += 3) {
+      }
+    case 'bgr8' || '8UC3' || 'bgra8' || '8UC4':
+      for (var y = 0, o = 0; y < height; y++) {
+        for (var x = 0, s = y * step; x < width; x++, s += bpp, o += 4) {
           out[o] = src[s + 2];
           out[o + 1] = src[s + 1];
           out[o + 2] = src[s];
-          out[o + 3] = 255;
+          out[o + 3] = bpp == 4 ? src[s + 3] : 255;
         }
-      case 'mono8':
-        for (var i = 0, o = 0; i < pixels; i++, o += 4) {
-          final v = src[i];
-          out[o] = v;
-          out[o + 1] = v;
-          out[o + 2] = v;
-          out[o + 3] = 255;
+      }
+    case 'mono16' || '16UC1' || '32FC1':
+      final bytes = ByteData.sublistView(src);
+      final endian = frame.isBigendian != 0 ? Endian.big : Endian.little;
+      final isFloat = encoding == '32FC1';
+      double at(int y, int x) => isFloat
+          ? bytes.getFloat32(y * step + x * 4, endian)
+          : bytes.getUint16(y * step + x * 2, endian).toDouble();
+      bool valid(double v) => v.isFinite && v > 0;
+      var lo = double.infinity, hi = double.negativeInfinity;
+      for (var y = 0; y < height; y++) {
+        for (var x = 0; x < width; x++) {
+          final v = at(y, x);
+          if (!valid(v)) continue;
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
         }
-      default:
-        return null;
-    }
-    return out;
+      }
+      final span = hi > lo ? hi - lo : 1.0;
+      for (var y = 0, o = 0; y < height; y++) {
+        for (var x = 0; x < width; x++, o += 4) {
+          final v = at(y, x);
+          grey(o, valid(v) ? (((v - lo) / span) * 254).round() + 1 : 0);
+        }
+      }
   }
+  return out;
 }
 
 /// Decodes and shows encoded image bytes without touching the global
@@ -251,8 +334,12 @@ class _UncachedMemoryImageState extends State<_UncachedMemoryImage> {
     _decodingBytes = bytes;
     try {
       final codec = await ui.instantiateImageCodec(bytes);
-      final frame = await codec.getNextFrame();
-      codec.dispose();
+      final ui.FrameInfo frame;
+      try {
+        frame = await codec.getNextFrame();
+      } finally {
+        codec.dispose();
+      }
       if (!mounted) {
         frame.image.dispose();
         return;

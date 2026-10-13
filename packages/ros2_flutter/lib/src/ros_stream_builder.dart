@@ -105,6 +105,10 @@ class _RosTopicBuilderState<T> extends State<RosTopicBuilder<T>> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<T>(
+      // Keyed by stream: StreamBuilder keeps the last value across a stream
+      // swap, so a new topic or a new robot would otherwise go on showing the
+      // old one's last message as if it were current.
+      key: ObjectKey(_stream),
       stream: _stream,
       initialData: widget.initialValue,
       builder: (context, snapshot) {

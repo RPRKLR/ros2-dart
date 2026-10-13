@@ -90,8 +90,12 @@ class _LaserScanPainter extends CustomPainter {
       for (var i = 0; i < current.ranges.length; i++) {
         final range = current.ranges[i];
         // Out-of-range readings come through as inf or NaN and must be skipped
-        // rather than plotted at the origin.
+        // rather than plotted at the origin. Readings outside the sensor's
+        // own limits are invalid by the message definition: below range_min
+        // they draw a ring of junk around the robot.
         if (!range.isFinite || range <= 0 || range > maxRange) continue;
+        if (range < current.rangeMin) continue;
+        if (current.rangeMax > 0 && range > current.rangeMax) continue;
         final angle = current.angleAt(i);
         points.add(Offset(
           center.dx - range * math.sin(angle) * scale,
