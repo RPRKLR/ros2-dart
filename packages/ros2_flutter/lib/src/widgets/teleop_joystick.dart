@@ -14,6 +14,10 @@ import '../ros_connection.dart';
 ///    or navigating away stops the robot;
 ///  * commands repeat at [publishRate] while held, so a robot running a
 ///    watchdog (most do) does not stop mid-motion.
+///
+/// It also stops, and ignores the rest of the drag until the stick is pressed
+/// again, when the app leaves the foreground or the connection is swapped for
+/// another robot's.
 class TeleopJoystick extends StatefulWidget {
   const TeleopJoystick({
     this.topic = '/cmd_vel',
@@ -45,14 +49,47 @@ class TeleopJoystick extends StatefulWidget {
   State<TeleopJoystick> createState() => _TeleopJoystickState();
 }
 
-class _TeleopJoystickState extends State<TeleopJoystick> {
+class _TeleopJoystickState extends State<TeleopJoystick>
+    with WidgetsBindingObserver {
   Offset _knob = Offset.zero;
   Timer? _timer;
   RosPublisher<Twist>? _publisher;
   Ros2Client? _client;
   String? _boundTopic;
 
+  /// Set when the stick was stopped from outside the gesture. The finger may
+  /// still be down, and the rest of its drag must not start the robot again:
+  /// only a fresh press does.
+  bool _suspended = false;
+
   double get _radius => widget.size / 2;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// Backgrounding mid-drag does not reliably cancel the pointer, and without
+  /// this the timer keeps driving a robot nobody is watching.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed && _isMoving) {
+      setState(_halt);
+      _publish(Twist.stop);
+    }
+  }
+
+  bool get _isMoving => _timer != null || _knob != Offset.zero;
+
+  /// Stops the repeat and centres the knob, without publishing. Callers
+  /// outside a build wrap it in setState.
+  void _halt() {
+    _timer?.cancel();
+    _timer = null;
+    _suspended = true;
+    _knob = Offset.zero;
+  }
 
   @override
   void didChangeDependencies() {
@@ -64,6 +101,11 @@ class _TeleopJoystickState extends State<TeleopJoystick> {
   void didUpdateWidget(TeleopJoystick oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.topic != widget.topic) _bind();
+    // A held stick keeps its timer, so a new rate would wait for a release.
+    if (oldWidget.publishRate != widget.publishRate && _timer != null) {
+      _timer!.cancel();
+      _timer = Timer.periodic(widget.publishRate, (_) => _publish(_command));
+    }
   }
 
   /// Rebinds when the topic or the connection changes.
@@ -76,8 +118,10 @@ class _TeleopJoystickState extends State<TeleopJoystick> {
     final client = RosConnection.of(context);
     if (identical(client, _client) && widget.topic == _boundTopic) return;
 
-    // Stop the robot we are about to stop talking to.
+    // Stop the robot we are about to stop talking to, and do not carry a
+    // held command over to the next one: the user aimed it at this robot.
     if (_publisher != null) {
+      if (_isMoving) _halt();
       _publishTo(_publisher, Twist.stop);
       _publisher!.close();
     }
@@ -98,6 +142,7 @@ class _TeleopJoystickState extends State<TeleopJoystick> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     // Best effort: if the socket is already gone the command is dropped, but
     // leaving a moving robot without a stop command is the worse failure.
@@ -120,6 +165,7 @@ class _TeleopJoystickState extends State<TeleopJoystick> {
   }
 
   void _onDrag(Offset local) {
+    if (_suspended) return;
     final center = Offset(_radius, _radius);
     var delta = local - center;
     if (delta.distance > _radius) {
@@ -133,6 +179,7 @@ class _TeleopJoystickState extends State<TeleopJoystick> {
   void _onRelease() {
     _timer?.cancel();
     _timer = null;
+    _suspended = false;
     setState(() => _knob = Offset.zero);
     _publish(Twist.stop);
   }
@@ -141,7 +188,10 @@ class _TeleopJoystickState extends State<TeleopJoystick> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return GestureDetector(
-      onPanStart: (d) => _onDrag(d.localPosition),
+      onPanStart: (d) {
+        _suspended = false;
+        _onDrag(d.localPosition);
+      },
       onPanUpdate: (d) => _onDrag(d.localPosition),
       onPanEnd: (_) => _onRelease(),
       onPanCancel: _onRelease,
@@ -204,6 +254,10 @@ class _JoystickPainter extends CustomPainter {
 ///
 /// Publishes while a button is held and stops on release, like
 /// [TeleopJoystick], but with exact speeds rather than proportional control.
+///
+/// With several buttons held, the most recently pressed one drives; lifting it
+/// hands back to the one still held, and the robot stops only when none is.
+/// Leaving the foreground or swapping robots stops it until the next press.
 class TeleopPad extends StatefulWidget {
   const TeleopPad({
     this.topic = '/cmd_vel',
@@ -222,12 +276,25 @@ class TeleopPad extends StatefulWidget {
   State<TeleopPad> createState() => _TeleopPadState();
 }
 
-class _TeleopPadState extends State<TeleopPad> {
+class _TeleopPadState extends State<TeleopPad> with WidgetsBindingObserver {
   Timer? _timer;
   RosPublisher<Twist>? _publisher;
   Ros2Client? _client;
   String? _boundTopic;
-  Twist _current = Twist.stop;
+
+  /// The command under each finger, in press order; the last one drives.
+  final _held = <int, Twist>{};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed && _held.isNotEmpty) _stopAll();
+  }
 
   @override
   void didChangeDependencies() {
@@ -239,6 +306,12 @@ class _TeleopPadState extends State<TeleopPad> {
   void didUpdateWidget(TeleopPad oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.topic != widget.topic) _bind();
+    // A held button keeps its timer, so a new rate would wait for a release.
+    if (oldWidget.publishRate != widget.publishRate && _timer != null) {
+      _timer!.cancel();
+      _timer = Timer.periodic(
+          widget.publishRate, (_) => _publishTo(_publisher, _current));
+    }
   }
 
   /// Rebinds when the topic or the connection changes.
@@ -251,11 +324,10 @@ class _TeleopPadState extends State<TeleopPad> {
     final client = RosConnection.of(context);
     if (identical(client, _client) && widget.topic == _boundTopic) return;
 
-    // Stop the robot we are about to stop talking to.
-    if (_publisher != null) {
-      _publishTo(_publisher, Twist.stop);
-      _publisher!.close();
-    }
+    // Stop the robot we are about to stop talking to, and forget what was
+    // held: the fingers still down were pressing for that robot.
+    if (_publisher != null) _stopAll();
+    _publisher?.close();
     _client = client;
     _boundTopic = widget.topic;
     // Perishable: a motion command that could not be sent must never be
@@ -273,31 +345,46 @@ class _TeleopPadState extends State<TeleopPad> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _publishTo(_publisher, Twist.stop);
     _publisher?.close();
     super.dispose();
   }
 
-  void _hold(Twist twist) {
-    _current = twist;
+  Twist get _current => _held.isEmpty ? Twist.stop : _held.values.last;
+
+  void _press(int pointer, Twist twist) {
+    _held
+      ..remove(pointer)
+      ..[pointer] = twist;
     _publishTo(_publisher, twist);
     _timer?.cancel();
     _timer = Timer.periodic(
         widget.publishRate, (_) => _publishTo(_publisher, _current));
   }
 
-  void _release() {
+  void _lift(int pointer) {
+    // A finger the pad already let go of, after a stop or a backgrounding.
+    if (_held.remove(pointer) == null) return;
+    if (_held.isEmpty) {
+      _stopAll();
+    } else {
+      _publishTo(_publisher, _current);
+    }
+  }
+
+  void _stopAll() {
+    _held.clear();
     _timer?.cancel();
     _timer = null;
-    _current = Twist.stop;
     _publishTo(_publisher, Twist.stop);
   }
 
   Widget _button(IconData icon, Twist twist) => Listener(
-        onPointerDown: (_) => _hold(twist),
-        onPointerUp: (_) => _release(),
-        onPointerCancel: (_) => _release(),
+        onPointerDown: (e) => _press(e.pointer, twist),
+        onPointerUp: (e) => _lift(e.pointer),
+        onPointerCancel: (e) => _lift(e.pointer),
         child: IconButton.filledTonal(
           onPressed: () {},
           icon: Icon(icon),
@@ -319,7 +406,7 @@ class _TeleopPadState extends State<TeleopPad> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: IconButton.filled(
-                onPressed: _release,
+                onPressed: _stopAll,
                 icon: const Icon(Icons.stop),
               ),
             ),

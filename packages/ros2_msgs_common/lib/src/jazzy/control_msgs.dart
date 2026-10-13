@@ -159,6 +159,46 @@ final class AdmittanceControllerState implements RosMessage {
   String toString() => 'AdmittanceControllerState(${toJson()})';
 }
 
+/// This message publishes values for multiple batteries at once.
+///
+/// `control_msgs/msg/BatteryStateArray`
+final class BatteryStateArray implements RosMessage {
+  const BatteryStateArray({
+    this.batteryStates = const [],
+  });
+
+  factory BatteryStateArray.fromJson(Map<String, Object?> json) =>
+      BatteryStateArray(
+        batteryStates: Field.asList<ros2.BatteryState>(
+            json['battery_states'], ros2.BatteryState.fromJson),
+      );
+
+  final List<ros2.BatteryState> batteryStates;
+
+  @override
+  String get rosType => 'control_msgs/msg/BatteryStateArray';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'battery_states':
+            batteryStates.map((ros2.BatteryState e) => e.toJson()).toList(),
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BatteryStateArray &&
+          _listEquals(other.batteryStates, batteryStates));
+
+  @override
+  int get hashCode => Object.hashAll([
+        ...batteryStates,
+      ]);
+
+  @override
+  String toString() => 'BatteryStateArray(${toJson()})';
+}
+
 /// `control_msgs/msg/DynamicInterfaceGroupValues`
 final class DynamicInterfaceGroupValues implements RosMessage {
   DynamicInterfaceGroupValues({
@@ -209,6 +249,56 @@ final class DynamicInterfaceGroupValues implements RosMessage {
   String toString() => 'DynamicInterfaceGroupValues(${toJson()})';
 }
 
+/// `control_msgs/msg/DynamicInterfaceValues`
+final class DynamicInterfaceValues implements RosMessage {
+  DynamicInterfaceValues({
+    ros2.Header? header,
+    InterfaceValue? states,
+    InterfaceValue? commands,
+  })  : header = header ?? ros2.Header(),
+        states = states ?? InterfaceValue(),
+        commands = commands ?? InterfaceValue();
+
+  factory DynamicInterfaceValues.fromJson(Map<String, Object?> json) =>
+      DynamicInterfaceValues(
+        header: Field.asMessage(json['header'], ros2.Header.fromJson),
+        states: Field.asMessage(json['states'], InterfaceValue.fromJson),
+        commands: Field.asMessage(json['commands'], InterfaceValue.fromJson),
+      );
+
+  final ros2.Header header;
+  final InterfaceValue states;
+  final InterfaceValue commands;
+
+  @override
+  String get rosType => 'control_msgs/msg/DynamicInterfaceValues';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'header': header.toJson(),
+        'states': states.toJson(),
+        'commands': commands.toJson(),
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DynamicInterfaceValues &&
+          other.header == header &&
+          other.states == states &&
+          other.commands == commands);
+
+  @override
+  int get hashCode => Object.hashAll([
+        header,
+        states,
+        commands,
+      ]);
+
+  @override
+  String toString() => 'DynamicInterfaceValues(${toJson()})';
+}
+
 /// `control_msgs/msg/DynamicJointState`
 final class DynamicJointState implements RosMessage {
   DynamicJointState({
@@ -257,6 +347,49 @@ final class DynamicJointState implements RosMessage {
 
   @override
   String toString() => 'DynamicJointState(${toJson()})';
+}
+
+/// `control_msgs/msg/Float64Values`
+final class Float64Values implements RosMessage {
+  Float64Values({
+    ros2.Header? header,
+    Float64List? values,
+  })  : header = header ?? ros2.Header(),
+        values = values ?? Float64List(0);
+
+  factory Float64Values.fromJson(Map<String, Object?> json) => Float64Values(
+        header: Field.asMessage(json['header'], ros2.Header.fromJson),
+        values:
+            json['values'] == null ? null : Field.asFloat64List(json['values']),
+      );
+
+  final ros2.Header header;
+  final Float64List values;
+
+  @override
+  String get rosType => 'control_msgs/msg/Float64Values';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'header': header.toJson(),
+        'values': Field.encodeNumbers(values),
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Float64Values &&
+          other.header == header &&
+          _listEquals(other.values, values));
+
+  @override
+  int get hashCode => Object.hashAll([
+        header,
+        ...values,
+      ]);
+
+  @override
+  String toString() => 'Float64Values(${toJson()})';
 }
 
 /// `control_msgs/msg/GripperCommand`
@@ -311,7 +444,8 @@ final class InterfaceValue implements RosMessage {
 
   factory InterfaceValue.fromJson(Map<String, Object?> json) => InterfaceValue(
         interfaceNames: Field.asStringList(json['interface_names']),
-        values: Field.asFloat64List(json['values']),
+        values:
+            json['values'] == null ? null : Field.asFloat64List(json['values']),
       );
 
   final List<String> interfaceNames;
@@ -535,8 +669,12 @@ final class JointJog implements RosMessage {
   factory JointJog.fromJson(Map<String, Object?> json) => JointJog(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
         jointNames: Field.asStringList(json['joint_names']),
-        displacements: Field.asFloat64List(json['displacements']),
-        velocities: Field.asFloat64List(json['velocities']),
+        displacements: json['displacements'] == null
+            ? null
+            : Field.asFloat64List(json['displacements']),
+        velocities: json['velocities'] == null
+            ? null
+            : Field.asFloat64List(json['velocities']),
         duration: Field.doubleAt(json, 'duration'),
       );
 
@@ -664,28 +802,21 @@ final class JointTrajectoryControllerState implements RosMessage {
     JointTrajectoryPoint? feedback,
     JointTrajectoryPoint? error,
     JointTrajectoryPoint? output,
-    JointTrajectoryPoint? desired,
-    JointTrajectoryPoint? actual,
     this.multiDofJointNames = const [],
     MultiDOFJointTrajectoryPoint? multiDofReference,
     MultiDOFJointTrajectoryPoint? multiDofFeedback,
     MultiDOFJointTrajectoryPoint? multiDofError,
     MultiDOFJointTrajectoryPoint? multiDofOutput,
-    MultiDOFJointTrajectoryPoint? multiDofDesired,
-    MultiDOFJointTrajectoryPoint? multiDofActual,
+    this.speedScalingFactor = 0,
   })  : header = header ?? ros2.Header(),
         reference = reference ?? JointTrajectoryPoint(),
         feedback = feedback ?? JointTrajectoryPoint(),
         error = error ?? JointTrajectoryPoint(),
         output = output ?? JointTrajectoryPoint(),
-        desired = desired ?? JointTrajectoryPoint(),
-        actual = actual ?? JointTrajectoryPoint(),
         multiDofReference = multiDofReference ?? MultiDOFJointTrajectoryPoint(),
         multiDofFeedback = multiDofFeedback ?? MultiDOFJointTrajectoryPoint(),
         multiDofError = multiDofError ?? MultiDOFJointTrajectoryPoint(),
-        multiDofOutput = multiDofOutput ?? MultiDOFJointTrajectoryPoint(),
-        multiDofDesired = multiDofDesired ?? MultiDOFJointTrajectoryPoint(),
-        multiDofActual = multiDofActual ?? MultiDOFJointTrajectoryPoint();
+        multiDofOutput = multiDofOutput ?? MultiDOFJointTrajectoryPoint();
 
   factory JointTrajectoryControllerState.fromJson(Map<String, Object?> json) =>
       JointTrajectoryControllerState(
@@ -697,9 +828,6 @@ final class JointTrajectoryControllerState implements RosMessage {
             Field.asMessage(json['feedback'], JointTrajectoryPoint.fromJson),
         error: Field.asMessage(json['error'], JointTrajectoryPoint.fromJson),
         output: Field.asMessage(json['output'], JointTrajectoryPoint.fromJson),
-        desired:
-            Field.asMessage(json['desired'], JointTrajectoryPoint.fromJson),
-        actual: Field.asMessage(json['actual'], JointTrajectoryPoint.fromJson),
         multiDofJointNames: Field.asStringList(json['multi_dof_joint_names']),
         multiDofReference: Field.asMessage(
             json['multi_dof_reference'], MultiDOFJointTrajectoryPoint.fromJson),
@@ -709,10 +837,7 @@ final class JointTrajectoryControllerState implements RosMessage {
             json['multi_dof_error'], MultiDOFJointTrajectoryPoint.fromJson),
         multiDofOutput: Field.asMessage(
             json['multi_dof_output'], MultiDOFJointTrajectoryPoint.fromJson),
-        multiDofDesired: Field.asMessage(
-            json['multi_dof_desired'], MultiDOFJointTrajectoryPoint.fromJson),
-        multiDofActual: Field.asMessage(
-            json['multi_dof_actual'], MultiDOFJointTrajectoryPoint.fromJson),
+        speedScalingFactor: Field.doubleAt(json, 'speed_scaling_factor'),
       );
 
   final ros2.Header header;
@@ -721,15 +846,12 @@ final class JointTrajectoryControllerState implements RosMessage {
   final JointTrajectoryPoint feedback;
   final JointTrajectoryPoint error;
   final JointTrajectoryPoint output;
-  final JointTrajectoryPoint desired;
-  final JointTrajectoryPoint actual;
   final List<String> multiDofJointNames;
   final MultiDOFJointTrajectoryPoint multiDofReference;
   final MultiDOFJointTrajectoryPoint multiDofFeedback;
   final MultiDOFJointTrajectoryPoint multiDofError;
   final MultiDOFJointTrajectoryPoint multiDofOutput;
-  final MultiDOFJointTrajectoryPoint multiDofDesired;
-  final MultiDOFJointTrajectoryPoint multiDofActual;
+  final double speedScalingFactor;
 
   @override
   String get rosType => 'control_msgs/msg/JointTrajectoryControllerState';
@@ -742,15 +864,12 @@ final class JointTrajectoryControllerState implements RosMessage {
         'feedback': feedback.toJson(),
         'error': error.toJson(),
         'output': output.toJson(),
-        'desired': desired.toJson(),
-        'actual': actual.toJson(),
         'multi_dof_joint_names': multiDofJointNames,
         'multi_dof_reference': multiDofReference.toJson(),
         'multi_dof_feedback': multiDofFeedback.toJson(),
         'multi_dof_error': multiDofError.toJson(),
         'multi_dof_output': multiDofOutput.toJson(),
-        'multi_dof_desired': multiDofDesired.toJson(),
-        'multi_dof_actual': multiDofActual.toJson(),
+        'speed_scaling_factor': speedScalingFactor,
       };
 
   @override
@@ -763,15 +882,12 @@ final class JointTrajectoryControllerState implements RosMessage {
           other.feedback == feedback &&
           other.error == error &&
           other.output == output &&
-          other.desired == desired &&
-          other.actual == actual &&
           _listEquals(other.multiDofJointNames, multiDofJointNames) &&
           other.multiDofReference == multiDofReference &&
           other.multiDofFeedback == multiDofFeedback &&
           other.multiDofError == multiDofError &&
           other.multiDofOutput == multiDofOutput &&
-          other.multiDofDesired == multiDofDesired &&
-          other.multiDofActual == multiDofActual);
+          other.speedScalingFactor == speedScalingFactor);
 
   @override
   int get hashCode => Object.hashAll([
@@ -781,19 +897,57 @@ final class JointTrajectoryControllerState implements RosMessage {
         feedback,
         error,
         output,
-        desired,
-        actual,
         ...multiDofJointNames,
         multiDofReference,
         multiDofFeedback,
         multiDofError,
         multiDofOutput,
-        multiDofDesired,
-        multiDofActual,
+        speedScalingFactor,
       ]);
 
   @override
   String toString() => 'JointTrajectoryControllerState(${toJson()})';
+}
+
+/// `control_msgs/msg/Keys`
+final class Keys implements RosMessage {
+  Keys({
+    ros2.Header? header,
+    this.keys = const [],
+  }) : header = header ?? ros2.Header();
+
+  factory Keys.fromJson(Map<String, Object?> json) => Keys(
+        header: Field.asMessage(json['header'], ros2.Header.fromJson),
+        keys: Field.asStringList(json['keys']),
+      );
+
+  final ros2.Header header;
+  final List<String> keys;
+
+  @override
+  String get rosType => 'control_msgs/msg/Keys';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'header': header.toJson(),
+        'keys': keys,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Keys &&
+          other.header == header &&
+          _listEquals(other.keys, keys));
+
+  @override
+  int get hashCode => Object.hashAll([
+        header,
+        ...keys,
+      ]);
+
+  @override
+  String toString() => 'Keys(${toJson()})';
 }
 
 /// `control_msgs/msg/MecanumDriveControllerState`
@@ -867,6 +1021,162 @@ final class MecanumDriveControllerState implements RosMessage {
   String toString() => 'MecanumDriveControllerState(${toJson()})';
 }
 
+/// Key Value pair to be used in MotionPrimitive messages
+///
+/// `control_msgs/msg/MotionArgument`
+final class MotionArgument implements RosMessage {
+  const MotionArgument({
+    this.name = '',
+    this.value = 0,
+  });
+
+  factory MotionArgument.fromJson(Map<String, Object?> json) => MotionArgument(
+        name: Field.stringAt(json, 'name'),
+        value: Field.doubleAt(json, 'value'),
+      );
+
+  final String name;
+  final double value;
+
+  @override
+  String get rosType => 'control_msgs/msg/MotionArgument';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'name': name,
+        'value': value,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MotionArgument && other.name == name && other.value == value);
+
+  @override
+  int get hashCode => Object.hashAll([
+        name,
+        value,
+      ]);
+
+  @override
+  String toString() => 'MotionArgument(${toJson()})';
+}
+
+/// `control_msgs/msg/MotionPrimitive`
+final class MotionPrimitive implements RosMessage {
+  MotionPrimitive({
+    this.type = -1,
+    this.blendRadius = 0,
+    this.additionalArguments = const [],
+    this.poses = const [],
+    Float64List? jointPositions,
+  }) : jointPositions = jointPositions ?? Float64List(0);
+
+  factory MotionPrimitive.fromJson(Map<String, Object?> json) =>
+      MotionPrimitive(
+        type: Field.intAt(json, 'type', -1),
+        blendRadius: Field.doubleAt(json, 'blend_radius'),
+        additionalArguments: Field.asList<MotionArgument>(
+            json['additional_arguments'], MotionArgument.fromJson),
+        poses: Field.asList<ros2.PoseStamped>(
+            json['poses'], ros2.PoseStamped.fromJson),
+        jointPositions: json['joint_positions'] == null
+            ? null
+            : Field.asFloat64List(json['joint_positions']),
+      );
+
+  static const int unknown = -1;
+
+  /// Often referred as PTP
+  static const int linearJoint = 0;
+
+  /// Often referred as LIN
+  static const int linearCartesian = 50;
+
+  /// Often referred as CIRC
+  static const int circularCartesian = 51;
+
+  /// one of the above
+  final int type;
+  final double blendRadius;
+
+  /// (max) velocity, (max) acceleration, efficiency
+  final List<MotionArgument> additionalArguments;
+  final List<ros2.PoseStamped> poses;
+  final Float64List jointPositions;
+
+  @override
+  String get rosType => 'control_msgs/msg/MotionPrimitive';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'type': type,
+        'blend_radius': blendRadius,
+        'additional_arguments':
+            additionalArguments.map((MotionArgument e) => e.toJson()).toList(),
+        'poses': poses.map((ros2.PoseStamped e) => e.toJson()).toList(),
+        'joint_positions': Field.encodeNumbers(jointPositions),
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MotionPrimitive &&
+          other.type == type &&
+          other.blendRadius == blendRadius &&
+          _listEquals(other.additionalArguments, additionalArguments) &&
+          _listEquals(other.poses, poses) &&
+          _listEquals(other.jointPositions, jointPositions));
+
+  @override
+  int get hashCode => Object.hashAll([
+        type,
+        blendRadius,
+        ...additionalArguments,
+        ...poses,
+        ...jointPositions,
+      ]);
+
+  @override
+  String toString() => 'MotionPrimitive(${toJson()})';
+}
+
+/// `control_msgs/msg/MotionPrimitiveSequence`
+final class MotionPrimitiveSequence implements RosMessage {
+  const MotionPrimitiveSequence({
+    this.motions = const [],
+  });
+
+  factory MotionPrimitiveSequence.fromJson(Map<String, Object?> json) =>
+      MotionPrimitiveSequence(
+        motions: Field.asList<MotionPrimitive>(
+            json['motions'], MotionPrimitive.fromJson),
+      );
+
+  final List<MotionPrimitive> motions;
+
+  @override
+  String get rosType => 'control_msgs/msg/MotionPrimitiveSequence';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'motions': motions.map((MotionPrimitive e) => e.toJson()).toList(),
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MotionPrimitiveSequence && _listEquals(other.motions, motions));
+
+  @override
+  int get hashCode => Object.hashAll([
+        ...motions,
+      ]);
+
+  @override
+  String toString() => 'MotionPrimitiveSequence(${toJson()})';
+}
+
 /// The message defines command for multiple degrees of freedom (DoF) typically used by many controllers.
 /// The message intentionally avoids 'joint' nomenclature because it can be generally use for command with
 /// different semantic meanings, e.g., joints, Cartesian axes, or have abstract meaning like GPIO interface.
@@ -883,8 +1193,11 @@ final class MultiDOFCommand implements RosMessage {
   factory MultiDOFCommand.fromJson(Map<String, Object?> json) =>
       MultiDOFCommand(
         dofNames: Field.asStringList(json['dof_names']),
-        values: Field.asFloat64List(json['values']),
-        valuesDot: Field.asFloat64List(json['values_dot']),
+        values:
+            json['values'] == null ? null : Field.asFloat64List(json['values']),
+        valuesDot: json['values_dot'] == null
+            ? null
+            : Field.asFloat64List(json['values_dot']),
       );
 
   final List<String> dofNames;
@@ -1197,6 +1510,45 @@ final class SingleDOFStateStamped implements RosMessage {
   String toString() => 'SingleDOFStateStamped(${toJson()})';
 }
 
+/// This message contains a scaling factor to scale trajectory execution. A factor of 1.0 means
+/// execution at normal speed, a factor of 0.0 means a full pause.
+/// Negative values are not allowed (Which should be checked by any instance consuming this message).
+///
+/// `control_msgs/msg/SpeedScalingFactor`
+final class SpeedScalingFactor implements RosMessage {
+  const SpeedScalingFactor({
+    this.factor = 0,
+  });
+
+  factory SpeedScalingFactor.fromJson(Map<String, Object?> json) =>
+      SpeedScalingFactor(
+        factor: Field.doubleAt(json, 'factor'),
+      );
+
+  final double factor;
+
+  @override
+  String get rosType => 'control_msgs/msg/SpeedScalingFactor';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'factor': factor,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SpeedScalingFactor && other.factor == factor);
+
+  @override
+  int get hashCode => Object.hashAll([
+        factor,
+      ]);
+
+  @override
+  String toString() => 'SpeedScalingFactor(${toJson()})';
+}
+
 /// `control_msgs/msg/SteeringControllerStatus`
 final class SteeringControllerStatus implements RosMessage {
   SteeringControllerStatus({
@@ -1216,15 +1568,21 @@ final class SteeringControllerStatus implements RosMessage {
   factory SteeringControllerStatus.fromJson(Map<String, Object?> json) =>
       SteeringControllerStatus(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
-        tractionWheelsPosition:
-            Field.asFloat64List(json['traction_wheels_position']),
-        tractionWheelsVelocity:
-            Field.asFloat64List(json['traction_wheels_velocity']),
-        steerPositions: Field.asFloat64List(json['steer_positions']),
-        linearVelocityCommand:
-            Field.asFloat64List(json['linear_velocity_command']),
-        steeringAngleCommand:
-            Field.asFloat64List(json['steering_angle_command']),
+        tractionWheelsPosition: json['traction_wheels_position'] == null
+            ? null
+            : Field.asFloat64List(json['traction_wheels_position']),
+        tractionWheelsVelocity: json['traction_wheels_velocity'] == null
+            ? null
+            : Field.asFloat64List(json['traction_wheels_velocity']),
+        steerPositions: json['steer_positions'] == null
+            ? null
+            : Field.asFloat64List(json['steer_positions']),
+        linearVelocityCommand: json['linear_velocity_command'] == null
+            ? null
+            : Field.asFloat64List(json['linear_velocity_command']),
+        steeringAngleCommand: json['steering_angle_command'] == null
+            ? null
+            : Field.asFloat64List(json['steering_angle_command']),
       );
 
   final ros2.Header header;
@@ -1280,6 +1638,56 @@ final class SteeringControllerStatus implements RosMessage {
 
   @override
   String toString() => 'SteeringControllerStatus(${toJson()})';
+}
+
+/// `control_msgs/msg/VDA5050SafetyState`
+final class VDA5050SafetyState implements RosMessage {
+  const VDA5050SafetyState({
+    this.eStop = '',
+    this.fieldViolation = false,
+  });
+
+  factory VDA5050SafetyState.fromJson(Map<String, Object?> json) =>
+      VDA5050SafetyState(
+        eStop: Field.stringAt(json, 'e_stop'),
+        fieldViolation: Field.boolAt(json, 'field_violation'),
+      );
+
+  static const String autoAck = 'autoAck';
+  static const String manual = 'manual';
+  static const String remote = 'remote';
+  static const String none = 'none';
+
+  /// Enum {autoAck, manual, remote, none} Acknowledge-Type of eStop:
+  final String eStop;
+
+  /// Protective field violation. True: field is violated False: field is not violated
+  final bool fieldViolation;
+
+  @override
+  String get rosType => 'control_msgs/msg/VDA5050SafetyState';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'e_stop': eStop,
+        'field_violation': fieldViolation,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VDA5050SafetyState &&
+          other.eStop == eStop &&
+          other.fieldViolation == fieldViolation);
+
+  @override
+  int get hashCode => Object.hashAll([
+        eStop,
+        fieldViolation,
+      ]);
+
+  @override
+  String toString() => 'VDA5050SafetyState(${toJson()})';
 }
 
 /// `control_msgs/msg/QueryCalibrationState_Request`
@@ -1395,9 +1803,15 @@ final class QueryTrajectoryStateResponse implements RosMessage {
         success: Field.boolAt(json, 'success'),
         message: Field.stringAt(json, 'message'),
         name: Field.asStringList(json['name']),
-        position: Field.asFloat64List(json['position']),
-        velocity: Field.asFloat64List(json['velocity']),
-        acceleration: Field.asFloat64List(json['acceleration']),
+        position: json['position'] == null
+            ? null
+            : Field.asFloat64List(json['position']),
+        velocity: json['velocity'] == null
+            ? null
+            : Field.asFloat64List(json['velocity']),
+        acceleration: json['acceleration'] == null
+            ? null
+            : Field.asFloat64List(json['acceleration']),
       );
 
   /// indicate successful run of triggered service
@@ -1446,6 +1860,243 @@ final class QueryTrajectoryStateResponse implements RosMessage {
 
   @override
   String toString() => 'QueryTrajectoryStateResponse(${toJson()})';
+}
+
+/// `control_msgs/msg/SetOdometry_Request`
+final class SetOdometryRequest implements RosMessage {
+  const SetOdometryRequest({
+    this.x = 0,
+    this.y = 0,
+    this.z = 0,
+    this.roll = 0,
+    this.pitch = 0,
+    this.yaw = 0,
+  });
+
+  factory SetOdometryRequest.fromJson(Map<String, Object?> json) =>
+      SetOdometryRequest(
+        x: Field.doubleAt(json, 'x'),
+        y: Field.doubleAt(json, 'y'),
+        z: Field.doubleAt(json, 'z'),
+        roll: Field.doubleAt(json, 'roll'),
+        pitch: Field.doubleAt(json, 'pitch'),
+        yaw: Field.doubleAt(json, 'yaw'),
+      );
+
+  final double x;
+  final double y;
+  final double z;
+  final double roll;
+  final double pitch;
+  final double yaw;
+
+  @override
+  String get rosType => 'control_msgs/msg/SetOdometry_Request';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'x': x,
+        'y': y,
+        'z': z,
+        'roll': roll,
+        'pitch': pitch,
+        'yaw': yaw,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SetOdometryRequest &&
+          other.x == x &&
+          other.y == y &&
+          other.z == z &&
+          other.roll == roll &&
+          other.pitch == pitch &&
+          other.yaw == yaw);
+
+  @override
+  int get hashCode => Object.hashAll([
+        x,
+        y,
+        z,
+        roll,
+        pitch,
+        yaw,
+      ]);
+
+  @override
+  String toString() => 'SetOdometryRequest(${toJson()})';
+}
+
+/// `control_msgs/msg/SetOdometry_Response`
+final class SetOdometryResponse implements RosMessage {
+  const SetOdometryResponse({
+    this.success = false,
+    this.message = '',
+  });
+
+  factory SetOdometryResponse.fromJson(Map<String, Object?> json) =>
+      SetOdometryResponse(
+        success: Field.boolAt(json, 'success'),
+        message: Field.stringAt(json, 'message'),
+      );
+
+  final bool success;
+  final String message;
+
+  @override
+  String get rosType => 'control_msgs/msg/SetOdometry_Response';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'success': success,
+        'message': message,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SetOdometryResponse &&
+          other.success == success &&
+          other.message == message);
+
+  @override
+  int get hashCode => Object.hashAll([
+        success,
+        message,
+      ]);
+
+  @override
+  String toString() => 'SetOdometryResponse(${toJson()})';
+}
+
+/// A list of MotionPrimitive messages that are executed in sequence. They don't have to be of the
+/// same type, as long as the robot supports executing them one after another.
+///
+/// `control_msgs/msg/ExecuteMotionPrimitiveSequence_Goal`
+final class ExecuteMotionPrimitiveSequenceGoal implements RosMessage {
+  ExecuteMotionPrimitiveSequenceGoal({
+    MotionPrimitiveSequence? trajectory,
+  }) : trajectory = trajectory ?? MotionPrimitiveSequence();
+
+  factory ExecuteMotionPrimitiveSequenceGoal.fromJson(
+          Map<String, Object?> json) =>
+      ExecuteMotionPrimitiveSequenceGoal(
+        trajectory: Field.asMessage(
+            json['trajectory'], MotionPrimitiveSequence.fromJson),
+      );
+
+  final MotionPrimitiveSequence trajectory;
+
+  @override
+  String get rosType => 'control_msgs/msg/ExecuteMotionPrimitiveSequence_Goal';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'trajectory': trajectory.toJson(),
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ExecuteMotionPrimitiveSequenceGoal &&
+          other.trajectory == trajectory);
+
+  @override
+  int get hashCode => Object.hashAll([
+        trajectory,
+      ]);
+
+  @override
+  String toString() => 'ExecuteMotionPrimitiveSequenceGoal(${toJson()})';
+}
+
+/// `control_msgs/msg/ExecuteMotionPrimitiveSequence_Result`
+final class ExecuteMotionPrimitiveSequenceResult implements RosMessage {
+  const ExecuteMotionPrimitiveSequenceResult({
+    this.errorCode = 0,
+    this.errorString = '',
+  });
+
+  factory ExecuteMotionPrimitiveSequenceResult.fromJson(
+          Map<String, Object?> json) =>
+      ExecuteMotionPrimitiveSequenceResult(
+        errorCode: Field.intAt(json, 'error_code'),
+        errorString: Field.stringAt(json, 'error_string'),
+      );
+
+  static const int successful = 0;
+  static const int invalidGoal = -1;
+  static const int oldHeaderTimestamp = -3;
+
+  final int errorCode;
+  final String errorString;
+
+  @override
+  String get rosType =>
+      'control_msgs/msg/ExecuteMotionPrimitiveSequence_Result';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'error_code': errorCode,
+        'error_string': errorString,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ExecuteMotionPrimitiveSequenceResult &&
+          other.errorCode == errorCode &&
+          other.errorString == errorString);
+
+  @override
+  int get hashCode => Object.hashAll([
+        errorCode,
+        errorString,
+      ]);
+
+  @override
+  String toString() => 'ExecuteMotionPrimitiveSequenceResult(${toJson()})';
+}
+
+/// Index of the currently executed motion primitive in the sequence.
+///
+/// `control_msgs/msg/ExecuteMotionPrimitiveSequence_Feedback`
+final class ExecuteMotionPrimitiveSequenceFeedback implements RosMessage {
+  const ExecuteMotionPrimitiveSequenceFeedback({
+    this.currentPrimitiveIndex = 0,
+  });
+
+  factory ExecuteMotionPrimitiveSequenceFeedback.fromJson(
+          Map<String, Object?> json) =>
+      ExecuteMotionPrimitiveSequenceFeedback(
+        currentPrimitiveIndex: Field.intAt(json, 'current_primitive_index'),
+      );
+
+  final int currentPrimitiveIndex;
+
+  @override
+  String get rosType =>
+      'control_msgs/msg/ExecuteMotionPrimitiveSequence_Feedback';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'current_primitive_index': currentPrimitiveIndex,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ExecuteMotionPrimitiveSequenceFeedback &&
+          other.currentPrimitiveIndex == currentPrimitiveIndex);
+
+  @override
+  int get hashCode => Object.hashAll([
+        currentPrimitiveIndex,
+      ]);
+
+  @override
+  String toString() => 'ExecuteMotionPrimitiveSequenceFeedback(${toJson()})';
 }
 
 /// The trajectory for all revolute, continuous or prismatic joints
@@ -2316,14 +2967,29 @@ void registerControlMsgs() {
     fromJson: AdmittanceControllerState.fromJson,
     toJson: _toJson,
   ));
+  MessageRegistry.register(const MessageCodec<BatteryStateArray>(
+    rosType: 'control_msgs/msg/BatteryStateArray',
+    fromJson: BatteryStateArray.fromJson,
+    toJson: _toJson,
+  ));
   MessageRegistry.register(const MessageCodec<DynamicInterfaceGroupValues>(
     rosType: 'control_msgs/msg/DynamicInterfaceGroupValues',
     fromJson: DynamicInterfaceGroupValues.fromJson,
     toJson: _toJson,
   ));
+  MessageRegistry.register(const MessageCodec<DynamicInterfaceValues>(
+    rosType: 'control_msgs/msg/DynamicInterfaceValues',
+    fromJson: DynamicInterfaceValues.fromJson,
+    toJson: _toJson,
+  ));
   MessageRegistry.register(const MessageCodec<DynamicJointState>(
     rosType: 'control_msgs/msg/DynamicJointState',
     fromJson: DynamicJointState.fromJson,
+    toJson: _toJson,
+  ));
+  MessageRegistry.register(const MessageCodec<Float64Values>(
+    rosType: 'control_msgs/msg/Float64Values',
+    fromJson: Float64Values.fromJson,
     toJson: _toJson,
   ));
   MessageRegistry.register(const MessageCodec<GripperCommand>(
@@ -2361,9 +3027,29 @@ void registerControlMsgs() {
     fromJson: JointTrajectoryControllerState.fromJson,
     toJson: _toJson,
   ));
+  MessageRegistry.register(const MessageCodec<Keys>(
+    rosType: 'control_msgs/msg/Keys',
+    fromJson: Keys.fromJson,
+    toJson: _toJson,
+  ));
   MessageRegistry.register(const MessageCodec<MecanumDriveControllerState>(
     rosType: 'control_msgs/msg/MecanumDriveControllerState',
     fromJson: MecanumDriveControllerState.fromJson,
+    toJson: _toJson,
+  ));
+  MessageRegistry.register(const MessageCodec<MotionArgument>(
+    rosType: 'control_msgs/msg/MotionArgument',
+    fromJson: MotionArgument.fromJson,
+    toJson: _toJson,
+  ));
+  MessageRegistry.register(const MessageCodec<MotionPrimitive>(
+    rosType: 'control_msgs/msg/MotionPrimitive',
+    fromJson: MotionPrimitive.fromJson,
+    toJson: _toJson,
+  ));
+  MessageRegistry.register(const MessageCodec<MotionPrimitiveSequence>(
+    rosType: 'control_msgs/msg/MotionPrimitiveSequence',
+    fromJson: MotionPrimitiveSequence.fromJson,
     toJson: _toJson,
   ));
   MessageRegistry.register(const MessageCodec<MultiDOFCommand>(
@@ -2391,9 +3077,19 @@ void registerControlMsgs() {
     fromJson: SingleDOFStateStamped.fromJson,
     toJson: _toJson,
   ));
+  MessageRegistry.register(const MessageCodec<SpeedScalingFactor>(
+    rosType: 'control_msgs/msg/SpeedScalingFactor',
+    fromJson: SpeedScalingFactor.fromJson,
+    toJson: _toJson,
+  ));
   MessageRegistry.register(const MessageCodec<SteeringControllerStatus>(
     rosType: 'control_msgs/msg/SteeringControllerStatus',
     fromJson: SteeringControllerStatus.fromJson,
+    toJson: _toJson,
+  ));
+  MessageRegistry.register(const MessageCodec<VDA5050SafetyState>(
+    rosType: 'control_msgs/msg/VDA5050SafetyState',
+    fromJson: VDA5050SafetyState.fromJson,
     toJson: _toJson,
   ));
   MessageRegistry.register(const MessageCodec<QueryCalibrationStateRequest>(
@@ -2414,6 +3110,34 @@ void registerControlMsgs() {
   MessageRegistry.register(const MessageCodec<QueryTrajectoryStateResponse>(
     rosType: 'control_msgs/msg/QueryTrajectoryState_Response',
     fromJson: QueryTrajectoryStateResponse.fromJson,
+    toJson: _toJson,
+  ));
+  MessageRegistry.register(const MessageCodec<SetOdometryRequest>(
+    rosType: 'control_msgs/msg/SetOdometry_Request',
+    fromJson: SetOdometryRequest.fromJson,
+    toJson: _toJson,
+  ));
+  MessageRegistry.register(const MessageCodec<SetOdometryResponse>(
+    rosType: 'control_msgs/msg/SetOdometry_Response',
+    fromJson: SetOdometryResponse.fromJson,
+    toJson: _toJson,
+  ));
+  MessageRegistry.register(
+      const MessageCodec<ExecuteMotionPrimitiveSequenceGoal>(
+    rosType: 'control_msgs/msg/ExecuteMotionPrimitiveSequence_Goal',
+    fromJson: ExecuteMotionPrimitiveSequenceGoal.fromJson,
+    toJson: _toJson,
+  ));
+  MessageRegistry.register(
+      const MessageCodec<ExecuteMotionPrimitiveSequenceResult>(
+    rosType: 'control_msgs/msg/ExecuteMotionPrimitiveSequence_Result',
+    fromJson: ExecuteMotionPrimitiveSequenceResult.fromJson,
+    toJson: _toJson,
+  ));
+  MessageRegistry.register(
+      const MessageCodec<ExecuteMotionPrimitiveSequenceFeedback>(
+    rosType: 'control_msgs/msg/ExecuteMotionPrimitiveSequence_Feedback',
+    fromJson: ExecuteMotionPrimitiveSequenceFeedback.fromJson,
     toJson: _toJson,
   ));
   MessageRegistry.register(const MessageCodec<FollowJointTrajectoryGoal>(
@@ -2521,6 +3245,23 @@ void registerControlMsgs() {
     decodeResponse: QueryTrajectoryStateResponse.fromJson,
     decodeRequest: QueryTrajectoryStateRequest.fromJson,
     encodeResponse: _toJson,
+  ));
+  ServiceRegistry.register(
+      const ServiceCodec<SetOdometryRequest, SetOdometryResponse>(
+    serviceType: 'control_msgs/srv/SetOdometry',
+    encodeRequest: _toJson,
+    decodeResponse: SetOdometryResponse.fromJson,
+    decodeRequest: SetOdometryRequest.fromJson,
+    encodeResponse: _toJson,
+  ));
+  ActionRegistry.register(const ActionCodec<
+      ExecuteMotionPrimitiveSequenceGoal,
+      ExecuteMotionPrimitiveSequenceFeedback,
+      ExecuteMotionPrimitiveSequenceResult>(
+    actionType: 'control_msgs/action/ExecuteMotionPrimitiveSequence',
+    encodeGoal: _toJson,
+    decodeFeedback: ExecuteMotionPrimitiveSequenceFeedback.fromJson,
+    decodeResult: ExecuteMotionPrimitiveSequenceResult.fromJson,
   ));
   ActionRegistry.register(const ActionCodec<FollowJointTrajectoryGoal,
       FollowJointTrajectoryFeedback, FollowJointTrajectoryResult>(

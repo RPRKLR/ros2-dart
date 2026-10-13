@@ -414,6 +414,93 @@ void main() {
       expect(buffer.lookup('map', 'base')!.translation.x, 50);
     });
 
+    test('sim time jumping back to zero is followed, not frozen', () {
+      // A Gazebo restart: /clock goes from 500 s back to 0 while the app keeps
+      // running. Every new sample is older than the cache window measured
+      // from the stale newest one, so each was trimmed on arrival and the
+      // latest lookup answered the pre-restart pose forever, without error.
+      final buffer = TfBuffer(cacheTime: const Duration(seconds: 10));
+      for (var i = 0; i <= 20; i++) {
+        buffer.setTransform(tf('map', 'base', x: 7, sec: 500 + i));
+      }
+      for (var i = 0; i < 15; i++) {
+        buffer.setTransform(tf('map', 'base',
+            x: i.toDouble(), sec: 0, nanosec: (i + 1) * 20000000));
+      }
+      expect(buffer.lookup('map', 'base')!.translation.x, 14);
+      expect(
+          buffer
+              .lookup('map', 'base', time: RosTime(sec: 0, nanosec: 200000000))!
+              .translation
+              .x,
+          closeTo(9, 1e-9));
+      expect(buffer.lookup('map', 'base', time: RosTime(sec: 510)), isNull,
+          reason: 'the pre-restart history no longer applies');
+    });
+
+    test('sim time going back by less than the cache window is followed', () {
+      // A reset 5 s into a run, or `ros2 bag play --loop` on a 5 s bag. The
+      // new stamps are within the window of the stale newest, so they are not
+      // outliers by distance, and the pre-restart samples kept answering
+      // "latest" and were interpolated against the new ones.
+      final buffer = TfBuffer(cacheTime: const Duration(seconds: 10));
+      for (var i = 0; i <= 50; i++) {
+        buffer.setTransform(tf('map', 'base',
+            x: 100.0 + i, sec: i ~/ 10, nanosec: i % 10 * 100000000));
+      }
+      for (var i = 0; i <= 30; i++) {
+        buffer.setTransform(tf('map', 'base',
+            x: i.toDouble(), sec: i ~/ 10, nanosec: i % 10 * 100000000));
+      }
+      expect(buffer.lookup('map', 'base')!.translation.x, 30);
+      expect(
+          buffer
+              .lookup('map', 'base', time: RosTime(sec: 1, nanosec: 50000000))!
+              .translation
+              .x,
+          closeTo(10.5, 1e-6),
+          reason: 'no interpolation across the restart');
+    });
+
+    test('a frame that reappears after a gap is not refused', () {
+      // A detected marker, published only while it is in view. The rest of
+      // the tree is at the new time, so the gap is not a clock jump; refusing
+      // the first nine samples after it left the marker frozen where it was.
+      final buffer = TfBuffer(cacheTime: const Duration(seconds: 10));
+      for (var i = 0; i <= 200; i++) {
+        final sec = 1000 + i ~/ 10;
+        final nanosec = i % 10 * 100000000;
+        buffer.setTransform(tf('map', 'odom', sec: sec, nanosec: nanosec));
+        if (i == 0) buffer.setTransform(tf('odom', 'tag', x: 1, sec: sec));
+      }
+      buffer.setTransform(tf('odom', 'tag', x: 2, sec: 1020));
+      expect(buffer.lookup('odom', 'tag')!.translation.x, 2);
+    });
+
+    test('a future stamp on one frame is still refused when the tree disagrees',
+        () {
+      final buffer = TfBuffer(cacheTime: const Duration(seconds: 10));
+      for (var i = 0; i <= 20; i++) {
+        buffer.setTransform(tf('map', 'odom', sec: 1000 + i));
+        buffer.setTransform(tf('odom', 'base', x: i.toDouble(), sec: 1000 + i));
+      }
+      buffer.setTransform(tf('odom', 'base', x: 99, sec: 1080));
+      expect(buffer.lookup('odom', 'base')!.translation.x, 20);
+    });
+
+    test('one late-stamped sample does not unseat the buffer', () {
+      final buffer = TfBuffer(cacheTime: const Duration(seconds: 10));
+      for (var i = 0; i <= 20; i++) {
+        buffer.setTransform(tf('map', 'base', x: i.toDouble(), sec: 1000 + i));
+      }
+      // A node whose clock is a minute slow.
+      buffer.setTransform(tf('map', 'base', x: -1, sec: 940));
+      expect(buffer.lookup('map', 'base')!.translation.x, 20);
+      expect(
+          buffer.lookup('map', 'base', time: RosTime(sec: 1015))!.translation.x,
+          15);
+    });
+
     test('a cycle is reported rather than answered inconsistently', () {
       final buffer = TfBuffer();
       buffer.setTransform(tf('a', 'b', x: 1), isStatic: true);

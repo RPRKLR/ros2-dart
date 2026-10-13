@@ -11,8 +11,10 @@
 ///       const Expanded(child: RosLaserScanView()),
 ///       RosTopicBuilder<BatteryState>(
 ///         topic: '/battery_state',
-///         builder: (context, b) =>
-///             Text(b == null ? '—' : '${(b.percentage * 100).round()}%'),
+///         // NaN: the robot cannot measure its charge, and many say so.
+///         builder: (context, b) => Text(b == null || b.percentage.isNaN
+///             ? '—'
+///             : '${(b.percentage * 100).round()}%'),
 ///       ),
 ///       const TeleopJoystick(),
 ///     ]),
@@ -28,5 +30,6 @@ export 'src/ros_stream_builder.dart' show RosTopicBuilder;
 export 'src/widgets/camera_view.dart' show RosCameraView, RosRawImageView;
 export 'src/widgets/connection_status.dart' show RosConnectionStatus;
 export 'src/widgets/laser_scan_view.dart' show RosLaserScanView;
+export 'src/widgets/map_view.dart' show RosMapView;
 export 'src/widgets/teleop_joystick.dart' show TeleopJoystick, TeleopPad;
 export 'src/widgets/tf_frame_builder.dart' show TfFrameBuilder;

@@ -30,8 +30,10 @@ RosConnection(
       const Expanded(child: RosLaserScanView()),
       RosTopicBuilder<BatteryState>(
         topic: '/battery_state',
-        builder: (context, b) =>
-            Text(b == null ? '—' : '${(b.percentage * 100).round()}%'),
+        // NaN: the robot cannot measure its charge, and many say so.
+        builder: (context, b) => Text(b == null || b.percentage.isNaN
+            ? '—'
+            : '${(b.percentage * 100).round()}%'),
       ),
       const TeleopJoystick(),
     ]),
@@ -50,6 +52,7 @@ RosConnection(
 | `RosCameraView` | Renders a `CompressedImage` topic |
 | `RosRawImageView` | Renders a raw `Image` topic (rgb8/bgr8/mono8/rgba8) |
 | `RosLaserScanView` | Top-down lidar plot |
+| `RosMapView` | `OccupancyGrid` map with pan and zoom, and the robot placed from tf |
 | `TeleopJoystick` | Analogue thumb-stick publishing `Twist` |
 | `TeleopPad` | Discrete D-pad publishing `Twist` |
 | `TfFrameBuilder` | Resolves a tf2 transform between two frames and rebuilds as it moves |

@@ -149,11 +149,11 @@ Future<void> main(List<String> args) async {
     print('          /turtlesim:background_r = $value');
   });
 
-  await check('parameters: listParams (slow; needs params_glob)', () async {
+  await check('parameters: listParams (slow)', () async {
     final sw = Stopwatch()..start();
     final names = await ros.listParams();
     print('          ${names.length} params in ${sw.elapsedMilliseconds}ms'
-        '${names.isEmpty ? "  (empty: bridge has no params_glob set)" : ""}');
+        '${names.isEmpty ? "  (empty: check the bridge's params_glob)" : ""}');
   }, timeout: const Duration(seconds: 60));
 
   await check('parameters: write and read back', () async {

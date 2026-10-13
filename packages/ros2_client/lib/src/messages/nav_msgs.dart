@@ -105,9 +105,11 @@ final class MapMetaData implements RosMessage {
     this.width = 0,
     this.height = 0,
     this.origin = const Pose(),
+    this.mapLoadTime = const RosTime(),
   });
 
   factory MapMetaData.fromJson(Map<String, Object?> json) => MapMetaData(
+        mapLoadTime: Field.asMessage(json['map_load_time'], RosTime.fromJson),
         resolution: Field.doubleAt(json, 'resolution'),
         width: Field.intAt(json, 'width'),
         height: Field.intAt(json, 'height'),
@@ -119,11 +121,16 @@ final class MapMetaData implements RosMessage {
   final int width, height;
   final Pose origin;
 
+  /// When the map was loaded. A map server bumps it on every reload, so it is
+  /// how a UI tells a new map from a republished one.
+  final RosTime mapLoadTime;
+
   @override
   String get rosType => 'nav_msgs/msg/MapMetaData';
 
   @override
   Map<String, Object?> toJson() => {
+        'map_load_time': mapLoadTime.toJson(),
         'resolution': resolution,
         'width': width,
         'height': height,
@@ -134,6 +141,7 @@ final class MapMetaData implements RosMessage {
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is MapMetaData &&
+          other.mapLoadTime == mapLoadTime &&
           other.resolution == resolution &&
           other.width == width &&
           other.height == height &&
@@ -141,6 +149,7 @@ final class MapMetaData implements RosMessage {
 
   @override
   int get hashCode => Object.hash(
+        mapLoadTime,
         resolution,
         width,
         height,

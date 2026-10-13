@@ -191,11 +191,17 @@ extension Ros2Introspection on Ros2Client {
   /// codegen library turns them into the same definitions the `.msg` parser
   /// produces.
   ///
-  /// **`rosapi` cannot describe a type with a bounded array or bounded
-  /// string.** `sequence<T, N>` and `string<N>` both make it raise an
-  /// `AssertionError` internally, which arrives here as a failed service call.
-  /// Generate those packages from source instead. Verified against rosapi
-  /// 2.0.7 on Humble with `shape_msgs/SolidPrimitive`.
+  /// **`rosapi` cannot describe a type with a bounded array, a bounded string
+  /// or a `wstring`, and asking crashes the `rosapi` node.**
+  /// `sequence<T, N>`, `string<N>` and `wstring` all make it raise an
+  /// `AssertionError` that escapes its service callback, and the node exits.
+  /// This call then times out, and every later `rosapi` request — every
+  /// method in this extension, `probeBridge` and the parameter calls included
+  /// — fails with "Service /rosapi/... does not exist" until rosbridge is
+  /// relaunched. Do not point this at a robot in service for such a type;
+  /// generate those packages from source instead. Verified against rosapi
+  /// 2.0.8 on Humble with `shape_msgs/SolidPrimitive` and
+  /// `example_interfaces/WString`.
   Future<List<Map<String, Object?>>> messageTypedefs(String type,
           {Duration timeout = graphQueryTimeout}) =>
       _typedefs('/rosapi/message_details', type, timeout);
@@ -264,10 +270,11 @@ extension Ros2Introspection on Ros2Client {
   /// **not** by calling that service: on a default-launched bridge
   /// `call_services_in_new_thread` is false and
   /// `default_call_service_timeout` is `0.0`, so calling a service that does
-  /// not exist parks the bridge's only queue thread *for the life of the
-  /// connection*. A diagnostic that can wedge the link it is diagnosing is
-  /// worse than the problem. `/rosapi/services` exists in every version, so
-  /// asking it what exists is free of that.
+  /// not exist parks the bridge's only queue thread until the call's timeout,
+  /// and every other request on the connection waits behind it. A diagnostic
+  /// that stalls the link it is diagnosing is worse than the problem.
+  /// `/rosapi/services` exists in every version, so asking it what exists is
+  /// free of that.
   ///
   /// Needs `rosapi` running. `rosbridge_websocket_launch.xml` starts it, but a
   /// bare `ros2 run rosbridge_server rosbridge_websocket` does not, and then
@@ -294,12 +301,11 @@ extension Ros2Introspection on Ros2Client {
   ///
   /// Two caveats, both properties of `rosapi` rather than this client:
   ///
-  ///  * it is **slow** — measured at 20+ seconds on an idle graph, because
-  ///    `rosapi` queries every node and waits for all of them;
-  ///  * it returns an empty list unless the bridge was launched with a
-  ///    `params_glob`, which defaults to empty and blocks enumeration:
-  ///    `ros2 launch rosbridge_server rosbridge_websocket_launch.xml
-  ///    params_glob:="[*]"`.
+  ///  * it is **slow** — seconds, and 20+ on a busy graph, because `rosapi`
+  ///    queries every node and waits for all of them;
+  ///  * a bridge launched with a `params_glob` lists only the names it
+  ///    matches. Without one, current rosbridge (2.0.8 on Humble, 2.7.1 on
+  ///    Jazzy) lists them all.
   ///
   /// [getParam] and [setParam] need neither — they respond in milliseconds and
   /// work without a glob, so prefer them when you already know the name.

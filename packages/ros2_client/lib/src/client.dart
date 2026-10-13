@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
+import 'package:collection/collection.dart';
 import 'package:meta/meta.dart';
 
 import 'encoding/wire_codec.dart';
@@ -10,6 +12,9 @@ import 'messages/service.dart';
 import 'protocol/backpressure.dart';
 import 'protocol/opcodes.dart';
 import 'protocol/qos.dart';
+import 'transport/connect_channel.dart'
+    if (dart.library.io) 'transport/connect_channel_io.dart'
+    show defaultIdleProbeInterval;
 import 'transport/transport.dart';
 import 'transport/websocket_transport.dart';
 
@@ -51,9 +56,12 @@ final class GoalHandle<Feedback, Result> {
 
   /// Requests cancellation. The goal is not cancelled until the server agrees;
   /// await [result] and catch [ActionFailedException] to observe the outcome.
+  ///
+  /// A timeout passed to `sendGoal` stays armed: a cancel can be refused, or
+  /// never delivered at all (see `send_action_goals_in_new_thread`), and
+  /// without it [result] would then never complete.
   void cancel() {
     if (isDone) return;
-    _timeoutTimer?.cancel();
     _client._send({
       'op': Op.cancelActionGoal,
       'id': goalId,
@@ -128,6 +136,7 @@ final class Ros2Client {
     this.statusLevel = StatusLevel.warning,
     this.sendSetLevel = false,
     this.protocols,
+    this.idleProbeInterval = defaultIdleProbeInterval,
     RosTransport Function(Uri uri)? transportFactory,
   }) : _transportFactory = transportFactory ??
             ((uri) => WebSocketTransport(uri, protocols: protocols));
@@ -179,7 +188,37 @@ final class Ros2Client {
   /// on for those.
   final bool sendSetLevel;
 
+  /// How long the link may stay silent before the client checks it is alive,
+  /// or `null` never to check. On by default only on the web.
+  ///
+  /// A half-open link, a laptop leaving Wi-Fi range or a robot losing power,
+  /// delivers nothing and reports nothing, so a client trusting the socket
+  /// stays "connected" forever. Native platforms notice through WebSocket
+  /// pings (`WebSocketTransport.pingInterval`), but a browser page cannot
+  /// send one. So after this long without a frame, the client publishes on a
+  /// hidden topic of its own, `/_ros2_client/probe_*`, which it also
+  /// subscribes to; the echo coming back through the bridge proves the link.
+  /// After two unanswered probes it reconnects, roughly three intervals after
+  /// the link went silent.
+  ///
+  /// No probe is sent while a service call or goal is outstanding: with
+  /// `call_services_in_new_thread` or `send_action_goals_in_new_thread` off,
+  /// the bridge answers nothing else until it finishes, and a busy bridge
+  /// would look like a dead one.
+  final Duration? idleProbeInterval;
+
   final RosTransport Function(Uri uri) _transportFactory;
+
+  Timer? _probeTimer;
+  DateTime _lastFrameAt = DateTime.now();
+  int _probesUnanswered = 0;
+  RosPublisher<JsonMessage>? _probe;
+
+  static final _probeCodec = MessageCodec<JsonMessage>(
+    rosType: 'std_msgs/msg/String',
+    fromJson: (json) => JsonMessage('std_msgs/msg/String', json),
+    toJson: (message) => message.data,
+  );
 
   RosTransport? _transport;
   StreamSubscription<Object>? _incomingSub;
@@ -198,6 +237,17 @@ final class Ros2Client {
 
   /// Live subscriptions, keyed by topic. A topic may have several listeners.
   final Map<String, List<_Listener<Object?>>> _listeners = {};
+
+  /// The one bridge subscription behind each topic's listeners: the `subscribe`
+  /// command its first listener sent, id and options included.
+  ///
+  /// One per topic, not one per listener. Every `subscribe` rosbridge receives
+  /// for a topic the client already has makes it deliver the next message
+  /// twice, to every listener: `MultiSubscriber.subscribe` registers the
+  /// client with a temporary latched subscriber while its existing one keeps
+  /// delivering. Verified against rosbridge 2.0.8. Messages are fanned out to
+  /// listeners here instead, by topic.
+  final Map<String, Map<String, Object?>> _bridgeSubscriptions = {};
 
   /// Advertised topics and their ref counts.
   final Map<String, _AdvertisedTopic> _advertised = {};
@@ -222,6 +272,10 @@ final class Ros2Client {
 
   /// Set once per outage, so a full buffer warns rather than spams.
   bool _outboxOverflowed = false;
+
+  /// Whether this connection has asked for `fragment_size`, which rosbridge
+  /// applies to the whole connection and keeps until it closes.
+  bool _fragmenting = false;
 
   /// Upper bound on a single message's fragment count, to reject nonsense
   /// before allocating.
@@ -394,8 +448,13 @@ final class Ros2Client {
       if (sendSetLevel) {
         _send({'op': Op.setLevel, 'level': statusLevel.wireName});
       }
+      // A new bridge connection starts unfragmented; the replay below asks
+      // again for any listener that still wants it.
+      _fragmenting = _bridgeSubscriptions.values
+          .any((command) => command.containsKey('fragment_size'));
       _resubscribeAll();
       _flushOutbox();
+      _startProbing();
       completer.complete();
     } catch (e, s) {
       completer.completeError(e, s);
@@ -411,6 +470,7 @@ final class Ros2Client {
   Future<void> close() async {
     _setState(RosConnectionState.closed);
     _reconnectTimer?.cancel();
+    _probeTimer?.cancel();
     await _incomingSub?.cancel();
     await _transport?.close();
 
@@ -434,6 +494,7 @@ final class Ros2Client {
       for (final list in _listeners.values) ...list,
     ];
     _listeners.clear();
+    _bridgeSubscriptions.clear();
     for (final l in listeners) {
       // Not awaited: close() completes only once the listener drains the done
       // event, which a paused or slow consumer can delay indefinitely.
@@ -523,7 +584,7 @@ final class Ros2Client {
     _rejectFragmentedBinary(topic, effectiveCompression, fragmentSize);
     _rejectUndecodableRaw<T>(topic, effectiveCompression);
     _warnAboutSharedTopicSettings(
-        topic, effectiveCompression, throttleRate, queueLength);
+        topic, effectiveCompression, throttleRate, queueLength, qos);
 
     final id = _nextId('subscribe');
     late final _Listener<T> listener;
@@ -534,17 +595,25 @@ final class Ros2Client {
         _listeners
             .putIfAbsent(topic, () => [])
             .add(listener as _Listener<Object?>);
+        if (_bridgeSubscriptions.containsKey(topic)) return;
+        _bridgeSubscriptions[topic] = listener.subscribeCommand;
+        if (fragmentSize != null) _fragmenting = true;
         _send(listener.subscribeCommand);
       },
       // A paused subscription is the only signal Dart gives that the consumer
       // is behind, and it is the one `await for` and StreamBuilder both
       // produce. While paused, messages are held as raw bodies and never
       // decoded; on resume only the survivors are.
-      onResume: () => listener.flushBacklog(),
+      onResume: () => listener.flushBacklog(_emitStatus),
       onCancel: () {
-        _listeners[topic]?.remove(listener);
-        if (_listeners[topic]?.isEmpty ?? false) _listeners.remove(topic);
-        _send({'op': Op.unsubscribe, 'id': id, 'topic': topic});
+        final remaining = _listeners[topic]?..remove(listener);
+        if (remaining != null && remaining.isNotEmpty) return;
+        _listeners.remove(topic);
+        // The bridge knows the topic by the id of whichever listener came
+        // first, which need not be this one.
+        final bridgeSub = _bridgeSubscriptions.remove(topic);
+        if (bridgeSub == null) return;
+        _send({'op': Op.unsubscribe, 'id': bridgeSub['id'], 'topic': topic});
         // Deliberately does not close `controller`: Dart already tears the
         // stream down after onCancel, and awaiting close() here deadlocks
         // against the very cancel that triggered it.
@@ -689,6 +758,9 @@ final class Ros2Client {
     String? type,
     Duration timeout = const Duration(seconds: 10),
   }) {
+    if (_state == RosConnectionState.closed) {
+      return Future.error(ServiceCallException(service, 'Client closed'));
+    }
     final id = _nextId('call');
     final completer = Completer<Map<String, Object?>>();
     _pendingCalls[id] = completer;
@@ -699,10 +771,16 @@ final class Ros2Client {
       'service': service,
       'args': args,
       if (type != null) 'type': type,
+      // The bridge's own default is to wait forever, and it serves one
+      // client's requests in order: a call that never returns blocks every
+      // call after it on this connection, long after this side gave up.
+      'timeout': timeout.inMicroseconds / Duration.microsecondsPerSecond,
     });
 
     return completer.future.timeout(timeout, onTimeout: () {
       _pendingCalls.remove(id);
+      // A call reported as timed out must not then run when the link returns.
+      _withdraw(id);
       throw TimeoutException(
           'Service $service did not respond within $timeout', timeout);
     }).whenComplete(() => _pendingCalls.remove(id));
@@ -740,6 +818,12 @@ final class Ros2Client {
     resultCompleter.future.ignore();
     final handle = GoalHandle<Feedback, Result>._(
         this, actionName, id, feedbackController, resultCompleter);
+    if (_state == RosConnectionState.closed) {
+      resultCompleter.completeError(ActionFailedException(
+          actionName, GoalStatus.unknown, 'Client closed'));
+      unawaited(feedbackController.close());
+      return handle;
+    }
 
     _activeGoals[id] = _ActiveGoal(
       actionName: actionName,
@@ -748,16 +832,35 @@ final class Ros2Client {
           feedbackController.add(resolved.decodeFeedback(json));
         }
       },
-      onResult: (json, status, ok) {
+      onResult: (values, status, ok) {
         if (resultCompleter.isCompleted) return;
+        final json = values is Map<String, Object?> ? values : null;
         if (ok && status.isTerminal && status == GoalStatus.succeeded) {
-          resultCompleter.complete(resolved.decodeResult(json));
+          resultCompleter.complete(resolved.decodeResult(json ?? const {}));
         } else if (ok && status == GoalStatus.unknown) {
           // Servers that omit status on success still deliver a result.
-          resultCompleter.complete(resolved.decodeResult(json));
-        } else {
+          resultCompleter.complete(resolved.decodeResult(json ?? const {}));
+        } else if (!ok) {
+          // The bridge failed the goal itself, and `values` is its error text.
           resultCompleter.completeError(ActionFailedException(
-              actionName, status, 'Goal ended as ${status.name}'));
+              actionName,
+              status,
+              'Goal ended as ${status.name}: ${values ?? 'no reason'}'));
+        } else {
+          // A server that aborts still sends a result, and it is often the
+          // only place that says why -- Nav2's error_code, for one.
+          Object? result;
+          var message = 'Goal ended as ${status.name}';
+          if (json != null) {
+            try {
+              result = resolved.decodeResult(json);
+            } catch (e) {
+              message = '$message; its result could not be decoded: $e';
+            }
+          }
+          resultCompleter.completeError(ActionFailedException(
+              actionName, status, message,
+              result: result));
         }
         handle._timeoutTimer?.cancel();
         unawaited(feedbackController.close());
@@ -784,6 +887,7 @@ final class Ros2Client {
       handle._timeoutTimer = Timer(timeout, () {
         final active = _activeGoals.remove(id);
         if (active == null || resultCompleter.isCompleted) return;
+        _withdraw(id);
         active.fail(ActionFailedException(
             actionName, GoalStatus.unknown, 'No result within $timeout'));
       });
@@ -841,6 +945,14 @@ final class Ros2Client {
     _outbox.add(command);
   }
 
+  /// Removes a queued request that has already been reported as failed.
+  ///
+  /// A call or goal made while offline waits in the outbox. If it is then
+  /// failed -- timed out, or failed by a reconnect -- the caller has been told
+  /// it did not happen, may well retry, and has no handle left to cancel it.
+  /// Sending it anyway when the link returns would run it behind their back.
+  void _withdraw(String id) => _outbox.removeWhere((c) => c['id'] == id);
+
   void _flushOutbox() {
     _outboxOverflowed = false;
     final pending = List<Map<String, Object?>>.from(_outbox);
@@ -856,11 +968,7 @@ final class Ros2Client {
     for (final entry in _advertised.values) {
       _sendDirect(entry.command);
     }
-    for (final list in _listeners.values) {
-      for (final listener in list) {
-        _sendDirect(listener.subscribeCommand);
-      }
-    }
+    _bridgeSubscriptions.values.forEach(_sendDirect);
   }
 
   void _sendDirect(Map<String, Object?> command) {
@@ -885,6 +993,8 @@ final class Ros2Client {
   /// process with nothing on `status` or `states` to explain it. `close()` has
   /// always failed them; a reconnect has to do the same.
   void _failInFlight() {
+    _pendingCalls.keys.forEach(_withdraw);
+    _activeGoals.keys.forEach(_withdraw);
     for (final call in _pendingCalls.values) {
       if (!call.isCompleted) {
         call.completeError(ServiceCallException(
@@ -903,6 +1013,43 @@ final class Ros2Client {
     }
   }
 
+  /// Starts checking an idle link; see [idleProbeInterval].
+  void _startProbing() {
+    final interval = idleProbeInterval;
+    if (interval == null) return;
+    _lastFrameAt = DateTime.now();
+    _probesUnanswered = 0;
+    if (_probe == null) {
+      // Once per client: both are replayed on every reconnect after this.
+      final topic = '/_ros2_client/probe_'
+          '${math.Random().nextInt(0x7fffffff).toRadixString(16)}';
+      subscribeJson(topic,
+              type: _probeCodec.rosType, compression: Compression.none)
+          .listen((_) {});
+      _probe =
+          advertise<JsonMessage>(topic, perishable: true, codec: _probeCodec);
+    }
+    _probeTimer?.cancel();
+    _probeTimer = Timer.periodic(interval, (_) => _checkAlive(interval));
+  }
+
+  void _checkAlive(Duration interval) {
+    if (!isConnected) return;
+    final silent = DateTime.now().difference(_lastFrameAt);
+    if (silent < interval) return;
+    if (_pendingCalls.isNotEmpty || _activeGoals.isNotEmpty) return;
+    if (_probesUnanswered >= 2) {
+      _emitStatus(RosStatus(
+          StatusLevel.warning,
+          'Nothing from the bridge for ${silent.inSeconds} s, and no reply '
+          'to $_probesUnanswered probes; the link is dead. Reconnecting.'));
+      _scheduleReconnect();
+      return;
+    }
+    _probesUnanswered++;
+    _probe?.publish(const JsonMessage('std_msgs/msg/String', {'data': ''}));
+  }
+
   void _onTransportError(Object error, StackTrace stack) {
     if (_state == RosConnectionState.closed) return;
     // Without this the reason a link died -- TLS failure, refused connection,
@@ -915,6 +1062,7 @@ final class Ros2Client {
   void _scheduleReconnect() {
     if (_state == RosConnectionState.closed) return;
     _reconnectTimer?.cancel();
+    _probeTimer?.cancel();
     // Partial fragments cannot be completed across a reconnect.
     _fragments.clear();
     _failInFlight();
@@ -954,6 +1102,8 @@ final class Ros2Client {
   }
 
   void _onFrame(Object frame) {
+    _lastFrameAt = DateTime.now();
+    _probesUnanswered = 0;
     final Map<String, Object?> message;
     try {
       message = WireCodec.decode(frame);
@@ -1041,9 +1191,8 @@ final class Ros2Client {
   void _handleActionResult(Map<String, Object?> message) {
     final goal = _activeGoals[message['id']];
     if (goal == null) return;
-    final values = message['values'];
     goal.onResult(
-      values is Map<String, Object?> ? values : const {},
+      message['values'],
       GoalStatus.fromValue(message['status'] as int?),
       message['result'] != false,
     );
@@ -1059,11 +1208,46 @@ final class Ros2Client {
   /// delivers a message.
   ///
   /// Failing here turns a silent hang into a message that names the cause.
-  static void _rejectFragmentedBinary(
+  ///
+  /// And `fragment_size` is not per subscription, whatever the protocol
+  /// document implies: `protocol.py` stores it on the connection from any
+  /// message that carries it, and keeps it until the socket closes. So one
+  /// fragmented JSON topic silences every CBOR topic on the same client, even
+  /// after it is cancelled. Verified against rosbridge 2.0.8.
+  void _rejectFragmentedBinary(
       String topic, Compression compression, int? fragmentSize) {
-    if (fragmentSize == null) return;
-    if (compression != Compression.cbor && compression != Compression.cborRaw) {
+    final binary =
+        compression == Compression.cbor || compression == Compression.cborRaw;
+    if (fragmentSize == null) {
+      if (binary && _fragmenting) {
+        throw ArgumentError.value(
+          compression.wireName,
+          'compression',
+          'This connection has asked rosbridge for fragment_size, which it '
+              'applies to every topic on the connection until it closes; '
+              '"$topic" would silently receive nothing in '
+              '${compression.wireName}. Use Compression.none here, or a '
+              'separate Ros2Client for the fragmented topic.',
+        );
+      }
       return;
+    }
+    if (!binary) {
+      final binaryTopics = {
+        for (final MapEntry(key: topic, value: command)
+            in _bridgeSubscriptions.entries)
+          if (const ['cbor', 'cbor-raw'].contains(command['compression']))
+            topic,
+      };
+      if (binaryTopics.isEmpty) return;
+      throw ArgumentError.value(
+        fragmentSize,
+        'fragmentSize',
+        'rosbridge applies fragment_size to the whole connection, and would '
+            'silently stop delivering ${binaryTopics.join(', ')}, which use '
+            'CBOR. Use a separate Ros2Client for "$topic", or drop '
+            'fragmentSize.',
+      );
     }
     throw ArgumentError.value(
       fragmentSize,
@@ -1100,56 +1284,39 @@ final class Ros2Client {
     );
   }
 
-  /// Warns when a subscription silently changes what other listeners get.
+  /// Warns when a listener's options will not apply.
   ///
-  /// rosbridge merges every client's options for a topic rather than honouring
-  /// them per subscription: `throttle_rate` and `queue_length` become the
-  /// `min()` across all listeners, and compression becomes the maximum, with
-  /// `cbor-raw` beating `cbor` beating `png`. So a second, unthrottled
-  /// subscriber turns throttling off for the widget that asked for it, and one
-  /// listener asking for `cbor-raw` hands every other listener on that topic an
-  /// undecodable blob.
+  /// A topic has one bridge subscription, set up by its first listener (see
+  /// [_bridgeSubscriptions]), so a later listener receives what that one asked
+  /// for: its compression, throttle rate, queue length and QoS. The QoS could
+  /// not be per listener anyway: rosbridge creates one ROS subscription per
+  /// topic and keeps the first QoS it was given, across clients, so a second
+  /// listener asking for best-effort behind a reliable one receives nothing.
   void _warnAboutSharedTopicSettings(String topic, Compression compression,
-      int? throttleRate, int? queueLength) {
-    final existing = _listeners[topic];
-    if (existing == null || existing.isEmpty) return;
+      int? throttleRate, int? queueLength, QosProfile qos) {
+    final existing = _bridgeSubscriptions[topic];
+    if (existing == null) return;
 
-    for (final listener in existing) {
-      final command = listener.subscribeCommand;
-      if (command['compression'] != compression.wireName) {
-        _emitStatus(RosStatus(
-            StatusLevel.warning,
-            'Topic "$topic" already has a listener using '
-            '${command['compression']}; rosbridge applies one compression per '
-            'topic, so both listeners will receive '
-            '${_strongerCompression(compression.wireName, '${command['compression']}')}.'));
-        break;
-      }
-    }
-
-    void checkMin(String field, int? requested) {
-      if (requested == null) return;
-      for (final listener in existing) {
-        final other = listener.subscribeCommand[field] as int? ?? 0;
-        if (other < requested) {
-          _emitStatus(RosStatus(
-              StatusLevel.warning,
-              'Topic "$topic" already has a listener with $field $other; '
-              'rosbridge takes the minimum across listeners, so the '
-              'requested $requested will not apply.'));
-          return;
-        }
-      }
-    }
-
-    checkMin('throttle_rate', throttleRate);
-    checkMin('queue_length', queueLength);
-  }
-
-  /// The compression rosbridge would settle on for two listeners.
-  static String _strongerCompression(String a, String b) {
-    const order = ['none', 'png', 'cbor', 'cbor-raw'];
-    return order.indexOf(a) >= order.indexOf(b) ? a : b;
+    final differences = <String>[
+      if (existing['compression'] != compression.wireName)
+        'compression ${existing['compression']} rather than '
+            '${compression.wireName}',
+      if (existing['throttle_rate'] != throttleRate)
+        'throttle_rate ${existing['throttle_rate'] ?? 'none'} rather than '
+            '${throttleRate ?? 'none'}',
+      if (existing['queue_length'] != queueLength)
+        'queue_length ${existing['queue_length'] ?? 'default'} rather than '
+            '${queueLength ?? 'default'}',
+      if (!const DeepCollectionEquality().equals(existing['qos'], qos.toWire()))
+        'QoS ${existing['qos']} rather than ${qos.toWire()}',
+    ];
+    if (differences.isEmpty) return;
+    _emitStatus(RosStatus(
+        StatusLevel.warning,
+        'Topic "$topic" is already subscribed, and every listener shares that '
+        'subscription, so this one gets ${differences.join(', ')}. If the '
+        'publisher is best-effort and the first listener reliable, neither '
+        'receives anything.'));
   }
 
   /// Reassembles a message split by the bridge's `fragment_size`.
@@ -1303,7 +1470,7 @@ final class _ActiveGoal {
 
   final String actionName;
   final void Function(Map<String, Object?>) onFeedback;
-  final void Function(Map<String, Object?>, GoalStatus, bool) onResult;
+  final void Function(Object?, GoalStatus, bool) onResult;
   final void Function(Object) onError;
 
   void fail(Object error) => onError(error);

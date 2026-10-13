@@ -649,15 +649,13 @@ await ros.setParam('/turtlesim:background_r', 255);
 final value = await ros.getParam('/turtlesim:background_r'); // 255
 ```
 
-`listParams()` is a different story: `rosapi` queries every node and takes 20+
-seconds, and returns an empty list unless the bridge was launched with a glob:
+`listParams()` is a different story: `rosapi` queries every node in turn and
+takes seconds, up to 20+ on a busy graph. Prefer `getParam`/`setParam` when you
+know the name — they respond in milliseconds.
 
-```bash
-ros2 launch rosbridge_server rosbridge_websocket_launch.xml params_glob:="[*]"
-```
-
-Prefer `getParam`/`setParam` when you know the name — they respond in
-milliseconds and need no glob.
+Launch the bridge without `params_glob`, which 0.2.0's docs wrongly
+recommended as `params_glob:="[*]"`: that value stops the launch on Humble and
+Jazzy alike, and current rosbridge lists every parameter without it.
 
 ## Verified against a real robot
 

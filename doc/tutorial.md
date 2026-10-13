@@ -112,7 +112,10 @@ unsubscribes from the bridge instead of leaking for the life of the app.
 RosTopicBuilder<BatteryState>(
   topic: '/battery_state',
   builder: (context, battery) => Text(
-    battery == null ? '—' : '${(battery.percentage * 100).round()}%',
+    // NaN: the robot cannot measure its charge, and many say so.
+    battery == null || battery.percentage.isNaN
+        ? '—'
+        : '${(battery.percentage * 100).round()}%',
   ),
 )
 ```
@@ -138,8 +141,9 @@ class Panel extends StatelessWidget {
                   : Icons.link_off),
               trailing: RosTopicBuilder<BatteryState>(
                 topic: '/battery_state',
-                builder: (context, b) => Text(
-                    b == null ? '—' : '${(b.percentage * 100).round()}%'),
+                builder: (context, b) => Text(b == null || b.percentage.isNaN
+                    ? '—'
+                    : '${(b.percentage * 100).round()}%'),
               ),
             ),
           ),

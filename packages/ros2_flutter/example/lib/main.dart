@@ -59,6 +59,7 @@ class ControlPanel extends StatelessWidget {
                     child: _Card(title: 'Camera', child: RosCameraView())),
                 const Expanded(
                     child: _Card(title: 'Lidar', child: RosLaserScanView())),
+                const Expanded(child: _Card(title: 'Map', child: RosMapView())),
               ];
               return Column(
                 children: [
@@ -118,7 +119,9 @@ class _Telemetry extends StatelessWidget {
               builder: (context, battery) => _Stat(
                 icon: Icons.battery_full,
                 label: 'Battery',
-                value: battery == null
+                // NaN means the robot cannot measure its charge, which
+                // many report; round() would throw on it mid-build.
+                value: battery == null || battery.percentage.isNaN
                     ? '—'
                     : '${(battery.percentage * 100).round()}%',
               ),

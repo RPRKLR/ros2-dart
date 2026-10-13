@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.3.0
+
+Requires `ros2_client` 0.3.0.
+
+**New: `RosMapView`** — a `nav_msgs/OccupancyGrid` with pan and zoom, and
+the robot placed on it from tf. The grid becomes an image once per map
+message, so panning a large map costs a textured quad per frame rather than
+a walk over every cell. It subscribes `transient_local`, so a view opened
+after `map_server` published still gets the map; verified against rosbridge
+2.0.8 with `ros2_client`'s `example/real_map_check.dart`.
+
+**Fixed**
+
+* Swapping `RosConnection` to another robot mid-drive left the old one
+  moving and drove the new one. The old client was closed before the teleop
+  widgets could send it a stop, and their repeat timer carried the held
+  command over. The old client now closes after its dependants rebind, and a
+  teleop widget stops and waits for a fresh press when its robot changes.
+* `TeleopJoystick` and `TeleopPad` kept publishing a held command while the
+  app was in the background, unless the platform happened to cancel the
+  pointer. Both now stop when the app leaves the foreground.
+* `TeleopPad` stopped the robot when any finger lifted, even with another
+  button still held. The most recent press now drives, and the robot stops
+  when no button is held.
+* `RosTopicBuilder` kept showing the old topic's last message after its topic
+  or client changed, as if it were current. So did the camera and lidar views
+  built on it.
+* `RosRawImageView` ignored `step`, so an image with padded rows drew skewed.
+  It now also shows `bgra8`, `mono16`, `16UC1` and `32FC1` (depth stretched to
+  grey), and says why it cannot show a frame instead of spinning forever.
+* `RosLaserScanView` plotted readings outside the scan's own `range_min` and
+  `range_max`, which the message defines as invalid; below `range_min` they
+  drew a ring of junk around the robot.
+* A `publishRate` changed while the joystick or pad was held took effect
+  only after release.
+* The battery snippet in the README, tutorial and example threw on a robot
+  that reports its charge as NaN, which many do when they cannot measure it.
+
 ## 0.2.0
 
 Requires `ros2_client` 0.2.0.

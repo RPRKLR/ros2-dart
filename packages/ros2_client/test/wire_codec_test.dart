@@ -142,4 +142,63 @@ void main() {
       expect(WireCodec.decode(bytes)['op'], 'ping');
     });
   });
+
+  group('uint64 scalars above int64', () {
+    test('keep their bits instead of clamping to int64 max', () {
+      // cbor2 encodes these as plain major-type-0 integers. Clamped, every
+      // value from 2^63 up decoded to the same number.
+      final msg = decodeMsg({
+        'max': CborInt(BigInt.parse('18446744073709551615')),
+        'half': CborInt(BigInt.parse('9223372036854775808')),
+        'small': 42,
+      });
+      expect(msg['max'], -1);
+      expect(msg['half'], -9223372036854775808);
+      expect(BigInt.from(msg['max']! as int).toUnsigned(64),
+          BigInt.parse('18446744073709551615'));
+      expect(msg['small'], 42);
+    });
+  });
+
+  group('uint64 in JSON', () {
+    test('decodes a literal beyond int64 with its bits, like CBOR does', () {
+      // jsonDecode alone returns these as doubles, low bits already gone.
+      final decoded = WireCodec.decodeJson('{"max":18446744073709551615,'
+          '"half":9223372036854775808,"list":[9223372036854775808,1],'
+          '"int64max":9223372036854775807,"int64min":-9223372036854775808,'
+          '"big":1.5e300}')! as Map<String, Object?>;
+      expect(decoded['max'], -1);
+      expect(decoded['half'], -9223372036854775808);
+      expect(decoded['list'], [-9223372036854775808, 1]);
+      expect(decoded['int64max'], 9223372036854775807);
+      expect(decoded['int64min'], -9223372036854775808);
+      expect(decoded['big'], 1.5e300);
+    });
+
+    test('leaves digits inside strings alone', () {
+      final decoded = WireCodec.decodeJson(
+          r'{"s":"id 18446744073709551615 \" 18446744073709551616",'
+          r'"n":18446744073709551615}')! as Map<String, Object?>;
+      expect(decoded['s'], 'id 18446744073709551615 " 18446744073709551616');
+      expect(decoded['n'], -1);
+    });
+
+    test('still repairs Infinity and NaN alongside', () {
+      final decoded =
+          WireCodec.decodeJson('{"r":[Infinity,NaN],"n":18446744073709551615}')!
+              as Map<String, Object?>;
+      expect((decoded['r']! as List).first, double.infinity);
+      expect(decoded['n'], -1);
+    });
+
+    test('encodes a BigInt as its bare digits', () {
+      expect(
+          WireCodec.encode({
+            'max': BigInt.parse('18446744073709551615'),
+            'list': [BigInt.from(5), 6],
+            's': 'text',
+          }),
+          '{"max":18446744073709551615,"list":[5,6],"s":"text"}');
+    });
+  });
 }

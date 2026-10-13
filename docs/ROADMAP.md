@@ -18,6 +18,106 @@ Nothing published offers typed messages, ROS 2 actions, QoS control, or
 resilience. That is the opening this project targets — the gap is real and
 nobody currently holds it.
 
+## Next release: 0.4.0
+
+**Theme: finish navigating from the app.** What 0.3.0 left: placing a goal
+on the map, the diagnostics panel, and a browser making a service call and
+sending a goal.
+
+### Widgets (`ros2_flutter`)
+
+- [ ] **Goal picker on the map**: press to place, drag to aim, and an
+      `onGoal(PoseStamped)` callback. It sends nothing itself, so
+      `ros2_flutter` keeps depending on `ros2_client` alone; the example shows
+      sending `NavigateToPose` with `ros2_msgs_common`.
+- [ ] **Diagnostics panel**. `DiagnosticArray` lives in `ros2_msgs_common`,
+      the same dependency question the goal picker avoided. Decide before
+      building: take a plain status model and let the app adapt, or decode
+      the few fields it needs without the generated class.
+
+### Verification
+
+- [ ] **A browser connects to a real bridge**: dart2js and WASM builds of the
+      example against rosbridge 2.0.8, topics, a service and an action.
+      *Topics done 2026-09-23*: both builds of the example, served from a
+      fresh clone into headless Chrome against rosbridge 2.0.8, decode
+      `BatteryState`, `Odometry`, a CBOR `LaserScan` with `inf`/`nan` and a
+      JPEG `CompressedImage`. Still open: a service and an action from the
+      browser, which the example never makes.
+
+## 0.3.0
+
+The `vX.Y` headings below are feature groups, not package versions: 0.2.0
+shipped transforms, backpressure and TLS from three of them. 0.3.0 is scoped
+here instead.
+
+**Theme: a robot you can navigate from the app.** The widgets nobody else
+offers, built on the TF support that already works, plus the checks that stand
+between "compiles" and "runs".
+
+Shipped as the map view, Jazzy support and the fixes from a three-way audit
+(client core, widgets, and tf/codegen/messages), 25 bugs in all, each with a
+regression test that fails without its fix. The rest of the theme moved to
+0.4.0 rather than hold those back.
+
+### Widgets (`ros2_flutter`)
+
+- [x] **`RosMapView`**: `nav_msgs/OccupancyGrid` (already bundled) rendered
+      once per map update into a cached image, never per frame; pan and zoom;
+      the robot's pose overlaid from TF (`map -> base_link`). The map arrives
+      over `transient_local`, so a late-opened view still gets it.
+      `example/real_map_check.dart` with `tool/robot_fixtures/map_pub.py`
+      confirms that against rosbridge 2.0.8: a map published before the
+      client connected arrives in CBOR and JSON with every cell intact, a
+      2048×2048 map arrives whole, and a volatile subscriber gets nothing.
+### Verification
+
+- [x] **A jumping `/clock`**: sim time reset under a running `TfListener`, as
+      happens on every Gazebo restart. It froze: each post-restart sample was
+      trimmed on arrival and lookups answered the pre-restart pose forever.
+      A jump back now re-baselines after ten samples, as a jump forward
+      already did (200 ms at 50 Hz). `example/real_clock_jump_check.dart`
+      with `tool/robot_fixtures/sim_clock_pub.py` passes against rosbridge
+      2.0.8 and fails with the fix reverted.
+- [x] **The example runs with `flutter run`** from a fresh clone. The
+      platform directories are committed; `flutter pub get` and
+      `flutter analyze` are clean, and `flutter run -d chrome` works as above.
+      Linux desktop was not built here: this machine lacks `clang++` and
+      GTK headers, which `flutter doctor` names.
+
+### Jazzy ✅
+
+- [x] **The client needs no changes.** Against rosbridge 2.7.1 in a
+      `ros:jazzy` container, every real check passes: bridge 18/18,
+      connection 6/6, tf, and large messages. `probeBridge()` reports Jazzy
+      with actions.
+- [x] **`ros2_msgs_common` could not serve both, so it now ships both.** Jazzy
+      regenerates to 282 messages against Humble's 221, and the differences
+      reach the wire: navigation results gained `error_code`/`error_msg`,
+      `FollowWaypoints.missed_waypoints` went from `int32[]` to
+      `MissedWaypoint[]`, and `JointTrajectoryControllerState` lost
+      `desired`/`actual`. rosbridge refuses a published field its distro does
+      not define, confirmed in both directions by
+      `example/real_distro_check.dart`. Libraries now live under `humble/` and
+      `jazzy/`; the unprefixed paths stay Humble.
+      `tool/regenerate_in_docker.sh` regenerates either distro from the
+      official image, and reproduces the local Humble output byte for byte.
+
+Found along the way, all fixed and verified on both distros:
+
+- **An aborted goal lost its result.** Nav2 on Jazzy says why a navigation
+  failed only in the aborted goal's result, and the client discarded it. Now
+  `ActionFailedException.result`. This matters directly for the goal picker.
+- **Mismatched definitions decoded as plausible zeros.** A Humble class read
+  Jazzy's missed-waypoint messages as indices of `0`. The scalar decoders now
+  throw on a message or list.
+- **The documented `params_glob:="[*]"` stopped the launch** on both distros,
+  and current rosbridge needs no glob to list parameters.
+
+### Out of scope
+
+Foxglove transport (needs re-justifying, see v0.5), URDF view, deflate.
+
 ## Design decisions already locked in
 
 **rosbridge over native DDS.** A pure-Dart DDS/RTPS stack is 6–12 months of
@@ -179,8 +279,8 @@ bundled types excluded still claimed to have written them.
 - `build.yaml`-compatible output, to fit normal Flutter build workflows
 - An online run against a robot with genuinely custom interfaces; everything
   so far was verified against stock Humble packages
-- `ros2_msgs_common` targets Humble only. Whether a Jazzy build differs enough
-  to need a second published version is unknown and untested.
+- ~~`ros2_msgs_common` targets Humble only.~~ Ships Humble and Jazzy sets
+  since 0.3.0; see "Next release: 0.3.0".
 
 ## v0.3 — Transforms ✅ *shipped*
 
@@ -454,9 +554,9 @@ largest single chunk of work left.
   to the next retry rather than saying "reconnecting" at an operator who
   cannot tell a second from half a minute. Landed early because the example
   app had already hand-rolled a worse version of it.
-- Occupancy grid / map widget with pan, zoom and pose overlay
-- 2D nav goal picker that sends a `NavigateToPose` action
-- Diagnostics panel driven by `diagnostic_msgs`
+- Occupancy grid / map widget with pan, zoom and pose overlay *(0.3.0)*
+- 2D nav goal picker *(0.3.0, as a callback rather than sending the action)*
+- Diagnostics panel driven by `diagnostic_msgs` *(0.3.0)*
 - Robot model view from `/robot_description` (URDF parse + 2D footprint first;
   3D is a much larger commitment)
 - Riverpod and Bloc integration examples — not dependencies
@@ -495,7 +595,7 @@ largest single chunk of work left.
 
 ## Publishing
 
-0.1.0 is on pub.dev, all three packages. 0.2.0 is pushed, not yet published.
+0.2.0 is on pub.dev, all three packages, published 2026-09-16.
 
 - ✅ Repository URL set in all three pubspecs.
 - ✅ `LICENSE` present (BSD-3-Clause, matching ROS convention).
@@ -507,18 +607,18 @@ largest single chunk of work left.
   `ros2_client`. Local development runs on gitignored `pubspec_overrides.yaml`
   files, recreated by `tool/link_local.sh`.
 
-For 0.2.0, in this order — the constraint is the same one 0.1.0 had:
+Releasing, in this order:
 
-- [x] **Dry-run all three.** Clean apart from the hint that
-      `pubspec_overrides.yaml` is in use.
-- [ ] **CI green on GitHub**, then merge to `main`: pub.dev resolves the
-      README's relative links and GIFs against the repository's default
-      branch, so `main` has to carry the 0.2.0 docs before the pages go live.
-- [ ] **Publish `ros2_client` 0.2.0 first.** The other two already declare
-      `ros2_client: ^0.2.0`, so neither resolves from pub until it is up.
-- [ ] **Then `ros2_msgs_common`, then `ros2_flutter`**, with the overrides
-      removed (`rm packages/*/pubspec_overrides.yaml`) so they resolve the
-      published `ros2_client`. `tool/link_local.sh` puts them back.
+1. CI green on the release branch, then merge to `main`. pub.dev resolves the
+   README's relative links and GIFs against the default branch, so `main` has
+   to carry the docs before the pages go live.
+2. Dry-run all three.
+3. `rm packages/*/pubspec_overrides.yaml`, so the dependents resolve the
+   published `ros2_client` rather than the sibling.
+4. Publish `ros2_client`, then `ros2_msgs_common`, then `ros2_flutter`. For a
+   minute or two after the first upload, `pub get` in the dependents can still
+   report that no version matches; pub's listing lags the website. Retry.
+5. `tool/link_local.sh`, and tag the release on `main`.
 
 ## CI
 
@@ -583,9 +683,12 @@ Reading `rosbridge_library/internal/qos_extraction.py` gave the real contract:
 A fake server can never catch this class of bug, because the fake agrees with
 whatever the client sends. Unit tests now pin the exact wire strings.
 
-**`rosapi/get_param_names` takes 20+ seconds** and returns an empty list unless
-the bridge is launched with `params_glob:="[*]"`. Confirmed to be `rosapi`, not
-the client — `ros2 service call` is equally slow. Introspection calls now
+**`rosapi/get_param_names` takes 20+ seconds** on a busy graph. Confirmed to be
+`rosapi`, not the client — `ros2 service call` is equally slow. The glob advice
+recorded here originally, `params_glob:="[*]"`, turned out wrong on 2026-09-16:
+current launch files parse it as YAML and fail, stopping the whole launch on
+Humble and Jazzy alike, and rosbridge 2.0.8 and 2.7.1 list every parameter
+with no glob at all. Introspection calls now
 default to a 45 s timeout; `getParam`/`setParam` respond in ~10 ms and need no
 glob.
 
@@ -595,8 +698,6 @@ glob.
   builds the whole public surface under both dart2js and WASM, and all three
   packages carry `platform:web` and `is:wasm-ready` on pub.dev — but nothing
   has yet opened a socket to a bridge from a browser.
-- CI itself has never executed: every job was run locally, step by step, but
-  the workflow has not run on GitHub because nothing is pushed yet.
 
 ## Large messages, verified against a real bridge ✅
 
@@ -679,5 +780,8 @@ accident.
   a call to a service that does not exist parks the bridge's only queue thread
   for the life of the connection, so the probe would wedge the link it was
   diagnosing.
+- **Verified distros: Humble (rosbridge 2.0.8) and Jazzy (2.7.1).** The
+  client runs unchanged on both; `ros2_msgs_common` ships a set per distro,
+  and an app must use its robot's.
 - The bundled messages target ROS 2 (`pkg/msg/Type` naming). ROS 1 short names
   are accepted as registry aliases but ROS 1 is not a support target.

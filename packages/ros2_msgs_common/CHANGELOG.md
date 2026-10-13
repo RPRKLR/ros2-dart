@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.0
+
+Requires `ros2_client` 0.3.0: the regenerated code uses its new `uint64`
+encoders.
+
+**Jazzy.** Every library now exists once per distro, under
+`package:ros2_msgs_common/humble/...` and `package:ros2_msgs_common/jazzy/...`,
+registered with `registerHumbleMessages()` or `registerJazzyMessages()`. Use
+the one your robot runs: the distros disagree on the wire, and rosbridge
+refuses a published field its distro does not define. The Jazzy set is 282
+messages against Humble's 221, adds `geographic_msgs`, and gives navigation
+results the `error_code` and `error_msg` Humble's lack.
+
+The imports without a distro and `registerCommonMessages()` are Humble, as
+before.
+
+**Fixed**, by regenerating with `ros2_client` 0.3.0's emitter:
+
+* `std_msgs/ByteMultiArray` could not be published: its `byte[]` went out as
+  base64, which rosbridge accepts only for `uint8[]` and `char[]`.
+* `uint64` fields at or above 2^63 keep their full range in both directions.
+* A missing fixed-size array, such as a nested `UUID` or a covariance,
+  decodes at its declared length instead of empty, which rosbridge refused
+  to publish.
+
+`tool/regenerate_in_docker.sh <distro>` regenerates from the official ROS
+image, for a distro that is not installed locally.
+
 ## 0.2.0
 
 Requires `ros2_client` 0.2.0: the regenerated code uses the key-aware field

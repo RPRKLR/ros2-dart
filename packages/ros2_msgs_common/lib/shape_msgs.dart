@@ -1,7 +1,8 @@
-/// Generated Dart classes for the ROS 2 `shape_msgs` package.
+/// Generated Dart classes for the ROS 2 `shape_msgs` package, as of ROS 2 Humble.
 ///
-/// Import this library directly; `ros2_msgs_common.dart` deliberately
-/// re-exports nothing, because ROS reuses type names across packages.
+/// The same library as `package:ros2_msgs_common/humble/shape_msgs.dart`, kept at
+/// this path so imports written before the per-distro libraries still work.
+/// New code should name its distro.
 library;
 
-export 'src/msgs/shape_msgs.dart';
+export 'src/humble/shape_msgs.dart';

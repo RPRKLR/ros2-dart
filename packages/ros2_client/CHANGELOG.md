@@ -1,5 +1,132 @@
 # Changelog
 
+## 0.3.0
+
+**Fixed**
+
+* A service call or goal made while offline could be reported as failed and
+  then sent anyway when the link came back: it was failed by a reconnect
+  attempt or its timeout, but left in the outbox. The robot then ran a goal
+  the app believed had failed, with no handle left to cancel it, and a retry
+  ran a service twice. A request reported as failed is now never sent.
+* A half-open link, a Wi-Fi dropout or a robot losing power, stayed
+  "connected" forever while every command went nowhere. On native platforms
+  the WebSocket now pings every 5 s (`WebSocketTransport.pingInterval`), and
+  an unanswered ping starts a reconnect. A browser page cannot send pings, so
+  there the client probes an idle link itself (`idleProbeInterval`, on by
+  default only on the web): it publishes on a hidden topic of its own,
+  `/_ros2_client/probe_*`, which it also subscribes to, and reconnects when
+  two probes go unanswered. Nothing is probed while a call or goal is
+  outstanding, since a bridge serving one answers nothing else. Verified with
+  `example/real_link_check.dart` through a proxy that goes silent: pings
+  notice after 5 s, the probe after 7 s, and an idle healthy link survives
+  both; before, the link was never noticed.
+* Every listener on a topic after the first made rosbridge deliver the next
+  message twice, to all of them, and so did every reconnect with several
+  listeners: each `subscribe` registers the client with a temporary latched
+  subscriber while the existing one keeps delivering. A topic now has one
+  bridge subscription, set up by its first listener and shared by the rest.
+  Their options are that subscription's, and a listener asking for others
+  gets a warning on `status`: previously rosbridge merged them, taking the
+  minimum throttle rate and the strongest compression. Verified against
+  rosbridge 2.0.8 with two listeners on `/chatter`.
+* A service call's `timeout` stayed on the client. rosbridge's default is to
+  wait forever and to serve one client's calls in order, so one hung call
+  blocked every later call on the connection, long after the caller gave up.
+  The timeout is now sent with the call. Verified against rosbridge 2.0.8: a
+  call after a timed-out one answers in 11 ms, against over 4 s before.
+* `fragmentSize` silently stopped every CBOR topic on the client, even after
+  the fragmented subscription was cancelled. rosbridge applies it to the whole
+  connection, not the subscription. Combining the two on one client now
+  throws, naming the topics; use a separate client for the fragmented topic.
+* A second listener on a topic with a different QoS got the first one's, and
+  so a best-effort sensor topic could deliver nothing to either. rosbridge
+  keeps one QoS per topic, so it cannot be per listener; the client now
+  warns on `status`.
+* `GoalHandle.cancel()` disarmed the goal's timeout, so a cancel that was
+  refused or never delivered left `result` pending forever.
+* A service call after `close()` waited out its full timeout, and a goal
+  never completed. Both now fail at once.
+* A decode error in a message held while the listener was paused was
+  swallowed rather than reported on `status`.
+* A `uint64` at or above 2^63 decoded as 9223372036854775807, whatever its
+  value, over both CBOR and JSON: `UINT64_MAX` sentinels, Gazebo entity ids
+  and FFmpeg timestamps all collapsed to one number. Publishing one sent a
+  negative number, which rosbridge rejected. Such values are now held as
+  their two's-complement bits, as uint64 typed arrays already were (read one
+  back with `toUnsigned(64)`), and go out as the unsigned value:
+  `WireCodec.encode` writes a `BigInt` as its bare digits, which `jsonEncode`
+  cannot. Verified against rosbridge 2.0.8 in both directions.
+* `byte[]` and bounded `uint8[<=N]` fields could not be published. Generated
+  code base64-encoded them, but rosbridge decodes base64 only for `uint8[]`,
+  `uint8[N]` and `char[]`, and rejected the rest with "msg is not a list
+  type", on its own console only. Every `std_msgs/ByteMultiArray` publish
+  was dropped, and every generated `rcl_interfaces` `SetParameters` call
+  failed, since `ParameterValue.byte_array_value` is a `byte[]`. They are now
+  sent as a list. Verified against rosbridge 2.0.8.
+* `TfBuffer` mixed samples from before and after a sim-time reset when the
+  clock went back by less than `cacheTime`: a Gazebo reset in the first
+  seconds, or `ros2 bag play --loop` on a short bag. "Latest" kept answering
+  the old pose, and timed lookups interpolated across the reset. Three
+  samples in a row stamped earlier than the newest one now re-baseline the
+  frame.
+* `TfBuffer` refused a frame that reappeared after more than `cacheTime`,
+  taking the gap for a clock jump. A detected marker or docking station froze
+  for its next nine samples, and a frame published slower than the window
+  kept only one sample in ten. A jump is now accepted at once when the rest
+  of the tree is already at that time.
+* `Imu`, `NavSatFix`, `BatteryState` and `MapMetaData` dropped fields on
+  decode, as `Odometry` did before it was fixed: IMU and GPS covariances,
+  `position_covariance_type`, battery temperature, health, technology and
+  per-cell values, and the map's `map_load_time`. Relaying one lost them, and
+  an IMU that reports no orientation (`orientation_covariance[0] == -1`,
+  REP-145) looked like a real one. All fields are now carried, and
+  `Imu.hasOrientation` says which case applies.
+* Generated `fromJson` decoded a missing fixed-size array as empty, and
+  rosbridge then refused to publish the message because the array was too
+  short; a missing nested `UUID` or `PoseWithCovariance` covariance was
+  enough. A missing array now gets the constructor's default, at the
+  declared length or with the declared array default.
+* `generate --from-robot` emitted `byte` constants as strings:
+  `DiagnosticStatus.ok` was `"b'\x00'"`, so comparing a level with it
+  compiled and was always false. They are now ints.
+* `generate --from-robot` on a type with a bounded array, a bounded string or
+  a `wstring` crashes the robot's `rosapi` node on rosbridge 2.0.8, rather
+  than just failing the one call as the documentation said, and the generator
+  then waited 45 s for each remaining type. It now stops at the first sign
+  that `rosapi` has gone, keeps what it already fetched, and says so. The
+  `messageTypedefs` documentation now describes the crash.
+* `MessageRegistry.byRosType(type).toJson(message)` always threw a
+  `TypeError`. The codec registered by name can now encode.
+* A generated integer constant beyond 2^53 broke every web build that
+  imported its library, and one beyond int64 did not compile at all. Such
+  constants are now parsed at runtime.
+
+* `TfBuffer` froze when sim time went back, as it does on every Gazebo
+  restart. Each new sample was older than the cache window measured from the
+  stale newest one, so it was trimmed on arrival, and lookups kept answering
+  the pose from before the restart with no error. A clock jump back is now
+  handled like a jump forward already was: one outlier is ignored, and ten in
+  a row re-baseline the frame onto the new clock. Verified against rosbridge
+  2.0.8 with `example/real_clock_jump_check.dart`, which fails without it.
+* An aborted goal kept nothing of its result. `ActionFailedException.result`
+  now holds it, decoded like a successful one. It is often the only place that
+  says why: Nav2 on Jazzy aborts a failed navigation with `error_code` and
+  `error_msg` in the result, and until now they were discarded. Verified
+  against rosbridge 2.7.1, which forwards them.
+* A goal the bridge failed itself reported only "Goal ended as unknown".
+  rosbridge sends the exception text, which the message now includes.
+  A result that arrives but cannot be decoded says so in the message too,
+  rather than leaving `result` null without explanation.
+* A message or list where a scalar belongs decoded as `0`, `false` or `''`,
+  and a scalar where a message belongs as an all-default message. Both now
+  throw `FormatException`. Neither is a quirk of the wire encoding; they mean
+  the robot's definitions differ from the generated class's. Jazzy's
+  `FollowWaypoints` reports missed waypoints as messages where Humble's has
+  integers, and a Humble class read them as a list of plausible, wrong
+  indices. `null`, numeric strings and ints for doubles still decode as
+  before.
+
 ## 0.2.0
 
 A minor bump rather than a patch, because pub reads `^0.1.0` as

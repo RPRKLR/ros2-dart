@@ -105,7 +105,9 @@ final class AccelWithCovariance implements RosMessage {
   factory AccelWithCovariance.fromJson(Map<String, Object?> json) =>
       AccelWithCovariance(
         accel: Field.asMessage(json['accel'], Accel.fromJson),
-        covariance: Field.asFloat64List(json['covariance']),
+        covariance: json['covariance'] == null
+            ? null
+            : Field.asFloat64List(json['covariance']),
       );
 
   final Accel accel;
@@ -673,7 +675,9 @@ final class PoseWithCovariance implements RosMessage {
   factory PoseWithCovariance.fromJson(Map<String, Object?> json) =>
       PoseWithCovariance(
         pose: Field.asMessage(json['pose'], ros2.Pose.fromJson),
-        covariance: Field.asFloat64List(json['covariance']),
+        covariance: json['covariance'] == null
+            ? null
+            : Field.asFloat64List(json['covariance']),
       );
 
   final ros2.Pose pose;
@@ -853,7 +857,9 @@ final class TwistWithCovariance implements RosMessage {
   factory TwistWithCovariance.fromJson(Map<String, Object?> json) =>
       TwistWithCovariance(
         twist: Field.asMessage(json['twist'], ros2.Twist.fromJson),
-        covariance: Field.asFloat64List(json['covariance']),
+        covariance: json['covariance'] == null
+            ? null
+            : Field.asFloat64List(json['covariance']),
       );
 
   final ros2.Twist twist;

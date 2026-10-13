@@ -15,7 +15,10 @@ import 'ros_connection.dart';
 /// RosTopicBuilder<BatteryState>(
 ///   topic: '/battery_state',
 ///   builder: (context, battery) => Text(
-///     battery == null ? '—' : '${(battery.percentage * 100).round()}%',
+///     // NaN: the robot cannot measure its charge, and many say so.
+///     battery == null || battery.percentage.isNaN
+///         ? '—'
+///         : '${(battery.percentage * 100).round()}%',
 ///   ),
 /// )
 /// ```
@@ -105,6 +108,10 @@ class _RosTopicBuilderState<T> extends State<RosTopicBuilder<T>> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<T>(
+      // Keyed by stream: StreamBuilder keeps the last value across a stream
+      // swap, so a new topic or a new robot would otherwise go on showing the
+      // old one's last message as if it were current.
+      key: ObjectKey(_stream),
       stream: _stream,
       initialData: widget.initialValue,
       builder: (context, snapshot) {

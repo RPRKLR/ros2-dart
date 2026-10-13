@@ -219,33 +219,58 @@ abstract final class DartEmitter {
   static String decodeExpr(FieldDef field, [TypeResolver? resolver]) {
     final key = "'${field.name}'";
     if (field.isArray) {
-      final typed = typedListFor(field.type);
-      if (typed != null) {
-        return switch (typed) {
-          'Uint8List' => 'Field.asBytes(json[$key])',
-          'Int8List' => 'Field.asInt8List(json[$key])',
-          'Int32List' => 'Field.asInt32List(json[$key])',
-          'Float32List' => 'Field.asFloat32List(json[$key])',
-          'Float64List' => 'Field.asFloat64List(json[$key])',
-          'Int16List' => 'Field.asInt16List(json[$key])',
-          'Uint16List' => 'Field.asUint16List(json[$key])',
-          'Uint32List' => 'Field.asUint32List(json[$key])',
-          'Int64List' => 'Field.asInt64List(json[$key])',
-          'Uint64List' => 'Field.asUint64List(json[$key])',
-          _ => 'Field.asFloat64List(json[$key])',
-        };
+      final decode = _arrayDecodeExpr(field, key, resolver);
+      // An absent array must fall back to the default the constructor would
+      // apply, not to an empty list. The decoders map a missing value to
+      // `[]`, which for `uint8[16] uuid` or `float64[36] covariance` is a
+      // message rosbridge refuses to publish ("must be a set or sequence with
+      // length 36"), and which drops a declared default such as
+      // `float32[6] deviation_limits [0.01, ...]`. Nested messages decode
+      // absent fields from `{}`, so this applies to every one of them.
+      final constDefault = constDefaultFor(field);
+      if (constDefault == null) {
+        // The constructor's `??` initialiser builds the right default.
+        return 'json[$key] == null ? null : $decode';
       }
-      // Scalars with no typed-data equivalent still need a scalar decoder;
-      // falling through would treat `bool[]` as an array of messages.
-      final scalar = scalarDartType(field.type);
-      if (scalar == 'String') return 'Field.asStringList(json[$key])';
-      if (scalar == 'bool') return 'Field.asBoolList(json[$key])';
-      // An explicit type argument: inference cannot resolve it from a
-      // constructor tear-off alone.
-      final element = fieldClassName(field.type, resolver);
-      return 'Field.asList<$element>(json[$key], $element.fromJson)';
+      if (_defaultElements(field)?.isNotEmpty ?? false) {
+        return 'json[$key] == null ? $constDefault : $decode';
+      }
+      return decode;
     }
+    return _scalarDecodeExpr(field, key, resolver);
+  }
 
+  static String _arrayDecodeExpr(
+      FieldDef field, String key, TypeResolver? resolver) {
+    final typed = typedListFor(field.type);
+    if (typed != null) {
+      return switch (typed) {
+        'Uint8List' => 'Field.asBytes(json[$key])',
+        'Int8List' => 'Field.asInt8List(json[$key])',
+        'Int32List' => 'Field.asInt32List(json[$key])',
+        'Float32List' => 'Field.asFloat32List(json[$key])',
+        'Float64List' => 'Field.asFloat64List(json[$key])',
+        'Int16List' => 'Field.asInt16List(json[$key])',
+        'Uint16List' => 'Field.asUint16List(json[$key])',
+        'Uint32List' => 'Field.asUint32List(json[$key])',
+        'Int64List' => 'Field.asInt64List(json[$key])',
+        'Uint64List' => 'Field.asUint64List(json[$key])',
+        _ => 'Field.asFloat64List(json[$key])',
+      };
+    }
+    // Scalars with no typed-data equivalent still need a scalar decoder;
+    // falling through would treat `bool[]` as an array of messages.
+    final scalar = scalarDartType(field.type);
+    if (scalar == 'String') return 'Field.asStringList(json[$key])';
+    if (scalar == 'bool') return 'Field.asBoolList(json[$key])';
+    // An explicit type argument: inference cannot resolve it from a
+    // constructor tear-off alone.
+    final element = fieldClassName(field.type, resolver);
+    return 'Field.asList<$element>(json[$key], $element.fromJson)';
+  }
+
+  static String _scalarDecodeExpr(
+      FieldDef field, String key, TypeResolver? resolver) {
     // Key-aware, and carrying the default the definition declares. Decoding
     // by value alone cannot tell an absent field from one rosbridge wrote as
     // `null` for being non-finite, and it cannot honour a declared default —
@@ -277,16 +302,34 @@ abstract final class DartEmitter {
     final name = fieldName(field.name);
     if (field.isArray) {
       final typed = typedListFor(field.type);
-      if (typed == 'Uint8List') return 'Field.encodeBytes($name)';
+      if (typed == 'Uint8List' && isBinaryOnWire(field)) {
+        return 'Field.encodeBytes($name)';
+      }
+      if (field.type == 'uint64') return 'Field.encodeUint64List($name)';
       if (typed != null) return 'Field.encodeNumbers($name)';
       // Scalar lists serialise as themselves; only message lists need toJson.
       if (scalarDartType(field.type) != null) return name;
       return '$name.map((${fieldClassName(field.type, resolver)} e) => '
           'e.toJson()).toList()';
     }
+    // A uint64 at or above 2^63 is held as its two's-complement bits, and
+    // must reach rosbridge as the unsigned value, not as a negative number.
+    if (field.type == 'uint64') return 'Field.encodeUint64($name)';
     if (scalarDartType(field.type) != null) return name;
     return '$name.toJson()';
   }
+
+  /// Whether rosbridge carries this byte array as a base64 string.
+  ///
+  /// Only `uint8[]`, `uint8[N]`, `char[]` and `char[N]` are: rosbridge's
+  /// `ros_binary_types` matches those IDL spellings and nothing else.
+  /// `byte[]` is `sequence<octet>` and a bounded `uint8[<=N]` is
+  /// `sequence<uint8, N>`; for both, rosbridge demands a JSON list of ints and
+  /// rejects a string with "msg is not a list type", dropping the publish or
+  /// failing the service call. Decoding accepts either form regardless.
+  static bool isBinaryOnWire(FieldDef field) =>
+      (field.type == 'uint8' || field.type == 'char') &&
+      field.arrayKind != ArrayKind.bounded;
 
   /// Renders a ROS literal as Dart source.
   ///
@@ -366,6 +409,22 @@ abstract final class DartEmitter {
       'String' => "''",
       _ => null,
     };
+  }
+
+  /// A runtime expression for an integer [literal] that a Dart literal cannot
+  /// carry, or `null` if the literal is fine as it is.
+  ///
+  /// Beyond 2^53 dart2js refuses the literal outright ("can't be represented
+  /// exactly in JavaScript"), which breaks every web build importing the
+  /// library, and beyond int64 — a `uint64` constant at or above 2^63 — the
+  /// VM refuses it too. Such a constant is parsed at runtime instead, keeping
+  /// the two's-complement bits a uint64 field holds.
+  static String? wideIntLiteral(String literal) {
+    final value = BigInt.tryParse(literal.replaceAll('_', ''));
+    if (value == null) return null;
+    final limit = BigInt.two.pow(53);
+    if (value.abs() <= limit) return null;
+    return "BigInt.parse('$value').toUnsigned(64).toSigned(64).toInt()";
   }
 
   /// Escapes a ROS string for a single-quoted Dart literal.

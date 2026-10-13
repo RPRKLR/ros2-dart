@@ -293,6 +293,64 @@ void main() {
       );
     });
 
+    test('an aborted goal keeps the result that says why', () async {
+      // Verified against rosbridge 2.7.1 on Jazzy: Nav2-style servers abort
+      // with the reason in the result, and the bridge forwards it as values.
+      await connect();
+      final handle =
+          ros.sendGoal<_Goal, int, String>('/fib', _Goal(1), codec: codec);
+      await pump();
+      bridge.sendResult({'sequence': 'partial'},
+          status: GoalStatus.aborted.value);
+
+      await expectLater(
+        handle.result,
+        throwsA(isA<ActionFailedException>()
+            .having((e) => e.status, 'status', GoalStatus.aborted)
+            .having((e) => e.result, 'result', 'partial')),
+      );
+    });
+
+    test('a result that fails to decode says so instead of vanishing',
+        () async {
+      await connect();
+      final strict = ActionCodec<_Goal, int, String>(
+        actionType: 'test_msgs/action/Fibonacci',
+        encodeGoal: (g) => {'order': g.order},
+        decodeFeedback: (json) => 0,
+        decodeResult: (json) => throw const FormatException('bad result'),
+      );
+      final handle =
+          ros.sendGoal<_Goal, int, String>('/fib', _Goal(2), codec: strict);
+      await pump();
+      bridge.sendResult({'sequence': 'x'}, status: GoalStatus.aborted.value);
+
+      await expectLater(
+        handle.result,
+        throwsA(isA<ActionFailedException>()
+            .having((e) => e.result, 'result', isNull)
+            .having((e) => e.message, 'message', contains('bad result'))),
+      );
+    });
+
+    test('a goal the bridge itself fails reports the bridge error', () async {
+      // rosbridge sends result: false with the exception text as values.
+      await connect();
+      final handle =
+          ros.sendGoal<_Goal, int, String>('/fib', _Goal(1), codec: codec);
+      await pump();
+      bridge.sendResultRaw('Action type not found',
+          status: GoalStatus.unknown.value, result: false);
+
+      await expectLater(
+        handle.result,
+        throwsA(isA<ActionFailedException>()
+            .having((e) => e.result, 'result', isNull)
+            .having((e) => e.message, 'message',
+                contains('Action type not found'))),
+      );
+    });
+
     test('a goal with no reply fails once its timeout elapses', () async {
       await connect();
       // A goal sent to an action server that does not exist gets no reply at
@@ -658,7 +716,7 @@ void main() {
     });
   });
 
-  group('options rosbridge merges across listeners', () {
+  group('listeners sharing a topic', () {
     test('refuses cbor-raw for a typed subscription', () async {
       await connect();
 
@@ -691,9 +749,9 @@ void main() {
           .listen((_) {});
       await pump();
 
-      // rosbridge applies one compression per topic, taking the strongest.
+      // One bridge subscription per topic, set up by the first listener.
       expect(statuses.map((s) => s.message).join(),
-          contains('one compression per topic'));
+          contains('compression none rather than cbor'));
     });
 
     test('warns when a second listener disables throttling', () async {
@@ -701,13 +759,76 @@ void main() {
       final statuses = <RosStatus>[];
       ros.status.listen(statuses.add);
 
-      // The unthrottled listener wins, because rosbridge takes the min.
+      // The first listener's subscription is unthrottled, and it is shared.
       ros.subscribe<LaserScan>('/scan').listen((_) {});
       ros.subscribe<LaserScan>('/scan', throttleRate: 200).listen((_) {});
       await pump();
 
       expect(statuses.map((s) => s.message).join(),
-          contains('takes the minimum across listeners'));
+          contains('throttle_rate none rather than 200'));
+    });
+
+    test('share one bridge subscription', () async {
+      // Each further subscribe made rosbridge deliver the next message twice,
+      // to every listener on the topic. Verified against rosbridge 2.0.8.
+      await connect();
+      final a = <LaserScan>[], b = <LaserScan>[];
+      final subA = ros.subscribe<LaserScan>('/scan').listen(a.add);
+      await pump();
+      final subB = ros.subscribe<LaserScan>('/scan').listen(b.add);
+      await pump();
+
+      expect(bridge.opsOf('subscribe'), hasLength(1));
+      bridge.publish('/scan', {'angle_min': 1.0});
+      await pump();
+      expect(a, hasLength(1));
+      expect(b, hasLength(1));
+
+      // The bridge knows the topic by the first listener's id. Cancelling
+      // that one keeps the subscription for the other...
+      final firstId = bridge.lastOf('subscribe')!['id'];
+      await subA.cancel();
+      expect(bridge.opsOf('unsubscribe'), isEmpty);
+      bridge.publish('/scan', {'angle_min': 2.0});
+      await pump();
+      expect(b, hasLength(2));
+
+      // ...and the last one leaving unsubscribes it, by that id.
+      await subB.cancel();
+      expect(bridge.opsOf('unsubscribe').single['id'], firstId);
+    });
+
+    test('a reconnect replays one subscription per topic', () async {
+      final farm = FakeBridgeFarm();
+      ros = Ros2Client(Uri.parse('ws://fake:9090'),
+          transportFactory: (_) => farm.create(),
+          reconnectPolicy: const ReconnectPolicy(
+              initialDelay: Duration(milliseconds: 5), jitter: 0));
+      await ros.connect();
+      for (var i = 0; i < 3; i++) {
+        ros.subscribe<LaserScan>('/scan').listen((_) {});
+      }
+      ros.subscribe<Odometry>('/odom').listen((_) {});
+      await pump();
+
+      farm.current.drop();
+      await pump();
+      await ros.waitUntilConnected(timeout: const Duration(seconds: 2));
+      final replayed = farm.current.opsOf('subscribe').map((c) => c['topic']);
+      expect(replayed, unorderedEquals(['/scan', '/odom']));
+    });
+
+    test('a topic can be subscribed again after its last listener left',
+        () async {
+      await connect();
+      await ros.subscribe<LaserScan>('/scan').listen((_) {}).cancel();
+      final got = <LaserScan>[];
+      ros.subscribe<LaserScan>('/scan').listen(got.add);
+      await pump();
+      expect(bridge.opsOf('subscribe'), hasLength(2));
+      bridge.publish('/scan', {'angle_min': 1.0});
+      await pump();
+      expect(got, hasLength(1));
     });
 
     test('says nothing when listeners agree', () async {

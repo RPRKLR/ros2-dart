@@ -433,7 +433,7 @@ final class InteractiveMarkerInit implements RosMessage {
   @override
   Map<String, Object?> toJson() => {
         'server_id': serverId,
-        'seq_num': seqNum,
+        'seq_num': Field.encodeUint64(seqNum),
         'markers': markers.map((InteractiveMarker e) => e.toJson()).toList(),
       };
 
@@ -549,7 +549,7 @@ final class InteractiveMarkerUpdate implements RosMessage {
   @override
   Map<String, Object?> toJson() => {
         'server_id': serverId,
-        'seq_num': seqNum,
+        'seq_num': Field.encodeUint64(seqNum),
         'type': type,
         'markers': markers.map((InteractiveMarker e) => e.toJson()).toList(),
         'poses': poses.map((InteractiveMarkerPose e) => e.toJson()).toList(),
@@ -897,7 +897,7 @@ final class MeshFile implements RosMessage {
 
   factory MeshFile.fromJson(Map<String, Object?> json) => MeshFile(
         filename: Field.stringAt(json, 'filename'),
-        data: Field.asBytes(json['data']),
+        data: json['data'] == null ? null : Field.asBytes(json['data']),
       );
 
   final String filename;
@@ -1022,7 +1022,7 @@ final class GetInteractiveMarkersResponse implements RosMessage {
 
   @override
   Map<String, Object?> toJson() => {
-        'sequence_number': sequenceNumber,
+        'sequence_number': Field.encodeUint64(sequenceNumber),
         'markers': markers.map((InteractiveMarker e) => e.toJson()).toList(),
       };
 

@@ -81,6 +81,46 @@ void main() {
     });
   });
 
+  group('a value of the wrong shape', () {
+    // Distro mismatches look like this: Jazzy's FollowWaypoints result sends
+    // messages where Humble's definition has int32[]. Decoding each as 0
+    // produced plausible, wrong waypoint indices.
+    test('a message where an integer belongs throws', () {
+      expect(
+          () => Field.asInt32List([
+                {'index': 2}
+              ]),
+          throwsA(isA<FormatException>()
+              .having((e) => e.message, 'message', contains('definitions'))));
+    });
+
+    test('every scalar refuses a message or a list', () {
+      for (final bad in <Object>[
+        const {'x': 1},
+        const [1],
+      ]) {
+        expect(() => Field.asInt(bad), throwsFormatException);
+        expect(() => Field.asDouble(bad), throwsFormatException);
+        expect(() => Field.asBool(bad), throwsFormatException);
+        expect(() => Field.asString(bad), throwsFormatException);
+      }
+    });
+
+    test('a scalar where a message belongs throws', () {
+      expect(() => Pose.fromJson(const {'position': 3}),
+          throwsA(isA<FormatException>()));
+    });
+
+    test('the lenient cases that are real wire behaviour still decode', () {
+      expect(Field.asInt(null), 0);
+      expect(Field.asInt('7'), 7);
+      expect(Field.asDouble(2), 2.0);
+      expect(Field.asString(5), '5');
+      expect(Field.asBool(1), isTrue);
+      expect(Pose.fromJson(const {'position': null}).position.x, 0);
+    });
+  });
+
   group('arrays of messages', () {
     test('a corrupt element is reported, not silently dropped', () {
       // Dropping renumbers everything after it: a path's waypoints shift by

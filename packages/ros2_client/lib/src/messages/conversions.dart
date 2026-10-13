@@ -52,19 +52,43 @@ abstract final class Field {
         final double d => d,
         final int i => i.toDouble(),
         final String s => double.tryParse(s) ?? double.nan,
+        Map() || List() => throw _notScalar('a number', v),
         _ => 0.0,
       };
 
   static int asInt(Object? v) => switch (v) {
         final int i => i,
+        // A uint64 at or above 2^63 has no int form. Keep its bits, as the
+        // CBOR decoder and the uint64 typed arrays do: 2^64 - 1 reads as -1,
+        // and [encodeUint64] turns it back into the unsigned value.
+        final BigInt b => b.toUnsigned(64).toSigned(64).toInt(),
         final double d => d.toInt(),
         final String s => int.tryParse(s) ?? 0,
+        Map() || List() => throw _notScalar('an integer', v),
         _ => 0,
       };
 
-  static bool asBool(Object? v) => v == true || v == 1;
+  static bool asBool(Object? v) => switch (v) {
+        Map() || List() => throw _notScalar('a bool', v),
+        _ => v == true || v == 1,
+      };
 
-  static String asString(Object? v) => v is String ? v : (v?.toString() ?? '');
+  static String asString(Object? v) => switch (v) {
+        final String s => s,
+        Map() || List() => throw _notScalar('a string', v),
+        _ => v?.toString() ?? '',
+      };
+
+  /// A message or array where a scalar belongs is never a quirk of the wire
+  /// encoding: the definitions on the two ends differ. Jazzy's
+  /// `FollowWaypoints` reports missed waypoints as messages where Humble's
+  /// has integers, and decoding each as `0` handed back plausible, wrong
+  /// indices.
+  static FormatException _notScalar(String expected, Object? v) =>
+      FormatException(
+          'Expected $expected, got a ${v is Map ? 'message' : 'list'}. '
+          'The message definitions on the robot differ from the ones this '
+          'class was generated from.');
 
   /// Decodes a ROS `uint8[]` field.
   ///
@@ -184,16 +208,36 @@ abstract final class Field {
   /// Decodes a nested message, tolerating a missing field.
   ///
   /// An absent message decodes from an empty map, so every field falls back to
-  /// the default its `.msg` declares — which is why [doubleAt] takes one.
+  /// the default its `.msg` declares — which is why [doubleAt] takes one. A
+  /// value that is present but not a message throws, as [asList] does: it
+  /// means the definitions differ, not that the field is missing.
   static T asMessage<T>(Object? v, T Function(Map<String, Object?>) from) =>
       from(switch (v) {
         final Map<String, Object?> m => m,
         final Map<Object?, Object?> m => m.cast<String, Object?>(),
-        _ => const {},
+        null => const {},
+        _ => throw FormatException(
+            'Expected a message, got ${v.runtimeType}. The message '
+            'definitions on the robot differ from the ones this class was '
+            'generated from.'),
       });
 
   /// Encodes a `uint8[]` for the JSON wire form.
   static Object encodeBytes(Uint8List bytes) => base64Encode(bytes);
+
+  /// Encodes a `uint64` for the wire.
+  ///
+  /// A Dart int holds a uint64 at or above 2^63 as its two's-complement bits,
+  /// so `2^64 - 1` is `-1`. Sent like that, rosbridge rejects the message:
+  /// the field must be non-negative. Those values go out as the unsigned
+  /// [BigInt] instead, which the wire encoder writes as bare digits; every
+  /// other value stays a plain int.
+  static Object encodeUint64(int value) =>
+      value >= 0 ? value : BigInt.from(value).toUnsigned(64);
+
+  /// Encodes a `uint64[]`, as [encodeUint64] does each element.
+  static List<Object> encodeUint64List(List<int> values) =>
+      [for (final v in values) encodeUint64(v)];
 
   /// Encodes a numeric typed array for the JSON wire form.
   static List<num> encodeNumbers(List<num> values) =>

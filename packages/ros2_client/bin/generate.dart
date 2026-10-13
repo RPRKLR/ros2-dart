@@ -263,6 +263,7 @@ Future<int> _generateFromRobot(
   }
 
   final harvest = TypedefHarvest();
+  var abandoned = false;
   try {
     final wanted = packages.isEmpty
         ? await _typesInUse(client)
@@ -275,8 +276,15 @@ Future<int> _generateFromRobot(
     }
     stdout.writeln('Fetching ${wanted.length} interface definitions ...');
 
+    final policy = RosapiFailurePolicy();
     for (final type in wanted) {
-      await _harvestType(client, harvest, type);
+      final abort = await _harvestType(client, harvest, policy, type);
+      if (abort != null) {
+        // Stop asking, but keep what was already harvested.
+        stderr.writeln('!  Stopping early: $abort');
+        abandoned = true;
+        break;
+      }
     }
   } on Object catch (e) {
     stderr.writeln('!  Introspection failed: $e');
@@ -362,7 +370,7 @@ Future<int> _generateFromRobot(
 
   stdout.writeln('\nGenerated $emitted messages into $outDir');
   stdout.writeln('Run `dart format $outDir` to tidy the output.');
-  return harvest.problems.isEmpty && missing.isEmpty ? 0 : 70;
+  return harvest.problems.isEmpty && missing.isEmpty && !abandoned ? 0 : 70;
 }
 
 /// Every interface type the robot is currently using.
@@ -401,8 +409,9 @@ Future<List<String>> _typesInPackages(
 }
 
 /// Fetches one interface, routing on the `msg` / `srv` / `action` segment.
-Future<void> _harvestType(
-    Ros2Client client, TypedefHarvest harvest, String type) async {
+/// Harvests one type, returning a reason to abandon the run, or `null`.
+Future<String?> _harvestType(Ros2Client client, TypedefHarvest harvest,
+    RosapiFailurePolicy policy, String type) async {
   final parts = type.split('/');
   final kind = parts.length > 2 ? parts[parts.length - 2] : 'msg';
   try {
@@ -423,13 +432,17 @@ Future<void> _harvestType(
       default:
         harvest.addMessages(await client.messageTypedefs(type));
     }
+    policy.onSuccess();
+    return null;
   } on Object catch (e) {
-    // rosapi raises internally on bounded arrays and bounded strings, which
-    // surfaces here as a failed service call. One bad type must not abandon
-    // the rest of the robot's interfaces.
+    // rosapi raises internally on bounded arrays, bounded strings and
+    // wstrings, and on rosbridge 2.0.8 that kills the rosapi node rather than
+    // failing one call. The policy decides whether anything is left to ask.
     stderr.writeln('!  $type: $e');
-    stderr.writeln('!    rosapi cannot describe types with bounded arrays or '
-        'bounded strings; generate this package from source with --search.');
+    stderr.writeln('!    rosapi cannot describe types with bounded arrays, '
+        'bounded strings or wstrings, and asking can crash the rosapi node '
+        'on the robot. Generate this package from source with --search.');
+    return policy.onFailure(e);
   }
 }
 
