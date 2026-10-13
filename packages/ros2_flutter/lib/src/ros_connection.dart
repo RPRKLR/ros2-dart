@@ -145,8 +145,12 @@ class _RosConnectionState extends State<RosConnection>
       // dispose() honours closeClientOnDispose; so must this, or swapping the
       // client leaves the old socket, its reconnect timer and every one of its
       // subscriptions alive for the life of the app.
+      //
+      // Not yet, though: descendants rebind to the new client later in this
+      // frame, and a teleop widget sends its last stop to the old robot as it
+      // does. Closing first would drop that stop and leave the robot moving.
       if (oldWidget.client == null || oldWidget.closeClientOnDispose) {
-        old.close();
+        WidgetsBinding.instance.addPostFrameCallback((_) => old.close());
       }
     }
   }
