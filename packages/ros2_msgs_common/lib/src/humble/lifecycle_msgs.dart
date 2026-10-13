@@ -215,7 +215,7 @@ final class TransitionEvent implements RosMessage {
 
   @override
   Map<String, Object?> toJson() => {
-        'timestamp': timestamp,
+        'timestamp': Field.encodeUint64(timestamp),
         'transition': transition.toJson(),
         'start_state': startState.toJson(),
         'goal_state': goalState.toJson(),

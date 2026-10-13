@@ -60,7 +60,7 @@ final class ByteMultiArray implements RosMessage {
 
   factory ByteMultiArray.fromJson(Map<String, Object?> json) => ByteMultiArray(
         layout: Field.asMessage(json['layout'], MultiArrayLayout.fromJson),
-        data: Field.asBytes(json['data']),
+        data: json['data'] == null ? null : Field.asBytes(json['data']),
       );
 
   /// specification of data layout
@@ -75,7 +75,7 @@ final class ByteMultiArray implements RosMessage {
   @override
   Map<String, Object?> toJson() => {
         'layout': layout.toJson(),
-        'data': Field.encodeBytes(data),
+        'data': Field.encodeNumbers(data),
       };
 
   @override
@@ -187,7 +187,7 @@ final class Float32MultiArray implements RosMessage {
   factory Float32MultiArray.fromJson(Map<String, Object?> json) =>
       Float32MultiArray(
         layout: Field.asMessage(json['layout'], MultiArrayLayout.fromJson),
-        data: Field.asFloat32List(json['data']),
+        data: json['data'] == null ? null : Field.asFloat32List(json['data']),
       );
 
   /// specification of data layout
@@ -238,7 +238,7 @@ final class Float64MultiArray implements RosMessage {
   factory Float64MultiArray.fromJson(Map<String, Object?> json) =>
       Float64MultiArray(
         layout: Field.asMessage(json['layout'], MultiArrayLayout.fromJson),
-        data: Field.asFloat64List(json['data']),
+        data: json['data'] == null ? null : Field.asFloat64List(json['data']),
       );
 
   /// specification of data layout
@@ -327,7 +327,7 @@ final class Int16MultiArray implements RosMessage {
   factory Int16MultiArray.fromJson(Map<String, Object?> json) =>
       Int16MultiArray(
         layout: Field.asMessage(json['layout'], MultiArrayLayout.fromJson),
-        data: Field.asInt16List(json['data']),
+        data: json['data'] == null ? null : Field.asInt16List(json['data']),
       );
 
   /// specification of data layout
@@ -378,7 +378,7 @@ final class Int32MultiArray implements RosMessage {
   factory Int32MultiArray.fromJson(Map<String, Object?> json) =>
       Int32MultiArray(
         layout: Field.asMessage(json['layout'], MultiArrayLayout.fromJson),
-        data: Field.asInt32List(json['data']),
+        data: json['data'] == null ? null : Field.asInt32List(json['data']),
       );
 
   /// specification of data layout
@@ -467,7 +467,7 @@ final class Int64MultiArray implements RosMessage {
   factory Int64MultiArray.fromJson(Map<String, Object?> json) =>
       Int64MultiArray(
         layout: Field.asMessage(json['layout'], MultiArrayLayout.fromJson),
-        data: Field.asInt64List(json['data']),
+        data: json['data'] == null ? null : Field.asInt64List(json['data']),
       );
 
   /// specification of data layout
@@ -555,7 +555,7 @@ final class Int8MultiArray implements RosMessage {
 
   factory Int8MultiArray.fromJson(Map<String, Object?> json) => Int8MultiArray(
         layout: Field.asMessage(json['layout'], MultiArrayLayout.fromJson),
-        data: Field.asInt8List(json['data']),
+        data: json['data'] == null ? null : Field.asInt8List(json['data']),
       );
 
   /// specification of data layout
@@ -753,7 +753,7 @@ final class UInt16MultiArray implements RosMessage {
   factory UInt16MultiArray.fromJson(Map<String, Object?> json) =>
       UInt16MultiArray(
         layout: Field.asMessage(json['layout'], MultiArrayLayout.fromJson),
-        data: Field.asUint16List(json['data']),
+        data: json['data'] == null ? null : Field.asUint16List(json['data']),
       );
 
   /// specification of data layout
@@ -842,7 +842,7 @@ final class UInt32MultiArray implements RosMessage {
   factory UInt32MultiArray.fromJson(Map<String, Object?> json) =>
       UInt32MultiArray(
         layout: Field.asMessage(json['layout'], MultiArrayLayout.fromJson),
-        data: Field.asUint32List(json['data']),
+        data: json['data'] == null ? null : Field.asUint32List(json['data']),
       );
 
   /// specification of data layout
@@ -899,7 +899,7 @@ final class UInt64 implements RosMessage {
 
   @override
   Map<String, Object?> toJson() => {
-        'data': data,
+        'data': Field.encodeUint64(data),
       };
 
   @override
@@ -931,7 +931,7 @@ final class UInt64MultiArray implements RosMessage {
   factory UInt64MultiArray.fromJson(Map<String, Object?> json) =>
       UInt64MultiArray(
         layout: Field.asMessage(json['layout'], MultiArrayLayout.fromJson),
-        data: Field.asUint64List(json['data']),
+        data: json['data'] == null ? null : Field.asUint64List(json['data']),
       );
 
   /// specification of data layout
@@ -946,7 +946,7 @@ final class UInt64MultiArray implements RosMessage {
   @override
   Map<String, Object?> toJson() => {
         'layout': layout.toJson(),
-        'data': Field.encodeNumbers(data),
+        'data': Field.encodeUint64List(data),
       };
 
   @override
@@ -1020,7 +1020,7 @@ final class UInt8MultiArray implements RosMessage {
   factory UInt8MultiArray.fromJson(Map<String, Object?> json) =>
       UInt8MultiArray(
         layout: Field.asMessage(json['layout'], MultiArrayLayout.fromJson),
-        data: Field.asBytes(json['data']),
+        data: json['data'] == null ? null : Field.asBytes(json['data']),
       );
 
   /// specification of data layout

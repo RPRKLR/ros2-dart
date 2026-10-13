@@ -240,7 +240,7 @@ final class Costmap implements RosMessage {
   factory Costmap.fromJson(Map<String, Object?> json) => Costmap(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
         metadata: Field.asMessage(json['metadata'], CostmapMetaData.fromJson),
-        data: Field.asBytes(json['data']),
+        data: json['data'] == null ? null : Field.asBytes(json['data']),
       );
 
   final ros2.Header header;
@@ -433,7 +433,7 @@ final class CostmapUpdate implements RosMessage {
         y: Field.intAt(json, 'y'),
         sizeX: Field.intAt(json, 'size_x'),
         sizeY: Field.intAt(json, 'size_y'),
-        data: Field.asBytes(json['data']),
+        data: json['data'] == null ? null : Field.asBytes(json['data']),
       );
 
   final ros2.Header header;
@@ -863,7 +863,7 @@ final class VoxelGrid implements RosMessage {
 
   factory VoxelGrid.fromJson(Map<String, Object?> json) => VoxelGrid(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
-        data: Field.asUint32List(json['data']),
+        data: json['data'] == null ? null : Field.asUint32List(json['data']),
         origin: Field.asMessage(json['origin'], Point32.fromJson),
         resolutions:
             Field.asMessage(json['resolutions'], ros2.Vector3.fromJson),
@@ -1230,8 +1230,12 @@ final class DynamicEdgesRequest implements RosMessage {
 
   factory DynamicEdgesRequest.fromJson(Map<String, Object?> json) =>
       DynamicEdgesRequest(
-        closedEdges: Field.asUint16List(json['closed_edges']),
-        openedEdges: Field.asUint16List(json['opened_edges']),
+        closedEdges: json['closed_edges'] == null
+            ? null
+            : Field.asUint16List(json['closed_edges']),
+        openedEdges: json['opened_edges'] == null
+            ? null
+            : Field.asUint16List(json['opened_edges']),
         adjustEdges:
             Field.asList<EdgeCost>(json['adjust_edges'], EdgeCost.fromJson),
       );
@@ -1513,7 +1517,9 @@ final class IsPathValidResponse implements RosMessage {
   factory IsPathValidResponse.fromJson(Map<String, Object?> json) =>
       IsPathValidResponse(
         isValid: Field.boolAt(json, 'is_valid'),
-        invalidPoseIndices: Field.asInt32List(json['invalid_pose_indices']),
+        invalidPoseIndices: json['invalid_pose_indices'] == null
+            ? null
+            : Field.asInt32List(json['invalid_pose_indices']),
       );
 
   final bool isValid;

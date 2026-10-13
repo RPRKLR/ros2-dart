@@ -311,7 +311,8 @@ final class InterfaceValue implements RosMessage {
 
   factory InterfaceValue.fromJson(Map<String, Object?> json) => InterfaceValue(
         interfaceNames: Field.asStringList(json['interface_names']),
-        values: Field.asFloat64List(json['values']),
+        values:
+            json['values'] == null ? null : Field.asFloat64List(json['values']),
       );
 
   final List<String> interfaceNames;
@@ -535,8 +536,12 @@ final class JointJog implements RosMessage {
   factory JointJog.fromJson(Map<String, Object?> json) => JointJog(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
         jointNames: Field.asStringList(json['joint_names']),
-        displacements: Field.asFloat64List(json['displacements']),
-        velocities: Field.asFloat64List(json['velocities']),
+        displacements: json['displacements'] == null
+            ? null
+            : Field.asFloat64List(json['displacements']),
+        velocities: json['velocities'] == null
+            ? null
+            : Field.asFloat64List(json['velocities']),
         duration: Field.doubleAt(json, 'duration'),
       );
 
@@ -883,8 +888,11 @@ final class MultiDOFCommand implements RosMessage {
   factory MultiDOFCommand.fromJson(Map<String, Object?> json) =>
       MultiDOFCommand(
         dofNames: Field.asStringList(json['dof_names']),
-        values: Field.asFloat64List(json['values']),
-        valuesDot: Field.asFloat64List(json['values_dot']),
+        values:
+            json['values'] == null ? null : Field.asFloat64List(json['values']),
+        valuesDot: json['values_dot'] == null
+            ? null
+            : Field.asFloat64List(json['values_dot']),
       );
 
   final List<String> dofNames;
@@ -1216,15 +1224,21 @@ final class SteeringControllerStatus implements RosMessage {
   factory SteeringControllerStatus.fromJson(Map<String, Object?> json) =>
       SteeringControllerStatus(
         header: Field.asMessage(json['header'], ros2.Header.fromJson),
-        tractionWheelsPosition:
-            Field.asFloat64List(json['traction_wheels_position']),
-        tractionWheelsVelocity:
-            Field.asFloat64List(json['traction_wheels_velocity']),
-        steerPositions: Field.asFloat64List(json['steer_positions']),
-        linearVelocityCommand:
-            Field.asFloat64List(json['linear_velocity_command']),
-        steeringAngleCommand:
-            Field.asFloat64List(json['steering_angle_command']),
+        tractionWheelsPosition: json['traction_wheels_position'] == null
+            ? null
+            : Field.asFloat64List(json['traction_wheels_position']),
+        tractionWheelsVelocity: json['traction_wheels_velocity'] == null
+            ? null
+            : Field.asFloat64List(json['traction_wheels_velocity']),
+        steerPositions: json['steer_positions'] == null
+            ? null
+            : Field.asFloat64List(json['steer_positions']),
+        linearVelocityCommand: json['linear_velocity_command'] == null
+            ? null
+            : Field.asFloat64List(json['linear_velocity_command']),
+        steeringAngleCommand: json['steering_angle_command'] == null
+            ? null
+            : Field.asFloat64List(json['steering_angle_command']),
       );
 
   final ros2.Header header;
@@ -1395,9 +1409,15 @@ final class QueryTrajectoryStateResponse implements RosMessage {
         success: Field.boolAt(json, 'success'),
         message: Field.stringAt(json, 'message'),
         name: Field.asStringList(json['name']),
-        position: Field.asFloat64List(json['position']),
-        velocity: Field.asFloat64List(json['velocity']),
-        acceleration: Field.asFloat64List(json['acceleration']),
+        position: json['position'] == null
+            ? null
+            : Field.asFloat64List(json['position']),
+        velocity: json['velocity'] == null
+            ? null
+            : Field.asFloat64List(json['velocity']),
+        acceleration: json['acceleration'] == null
+            ? null
+            : Field.asFloat64List(json['acceleration']),
       );
 
   /// indicate successful run of triggered service

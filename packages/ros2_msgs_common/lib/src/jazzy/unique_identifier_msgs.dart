@@ -19,7 +19,7 @@ final class UUID implements RosMessage {
   }) : uuid = uuid ?? Uint8List(16);
 
   factory UUID.fromJson(Map<String, Object?> json) => UUID(
-        uuid: Field.asBytes(json['uuid']),
+        uuid: json['uuid'] == null ? null : Field.asBytes(json['uuid']),
       );
 
   /// Fixed length: 16.

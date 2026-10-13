@@ -80,10 +80,17 @@ final class JointTrajectoryPoint implements RosMessage {
 
   factory JointTrajectoryPoint.fromJson(Map<String, Object?> json) =>
       JointTrajectoryPoint(
-        positions: Field.asFloat64List(json['positions']),
-        velocities: Field.asFloat64List(json['velocities']),
-        accelerations: Field.asFloat64List(json['accelerations']),
-        effort: Field.asFloat64List(json['effort']),
+        positions: json['positions'] == null
+            ? null
+            : Field.asFloat64List(json['positions']),
+        velocities: json['velocities'] == null
+            ? null
+            : Field.asFloat64List(json['velocities']),
+        accelerations: json['accelerations'] == null
+            ? null
+            : Field.asFloat64List(json['accelerations']),
+        effort:
+            json['effort'] == null ? null : Field.asFloat64List(json['effort']),
         timeFromStart:
             Field.asMessage(json['time_from_start'], ros2.RosDuration.fromJson),
       );

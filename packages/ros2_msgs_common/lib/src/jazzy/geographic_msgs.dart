@@ -301,7 +301,9 @@ final class GeoPoseWithCovariance implements RosMessage {
   factory GeoPoseWithCovariance.fromJson(Map<String, Object?> json) =>
       GeoPoseWithCovariance(
         pose: Field.asMessage(json['pose'], GeoPose.fromJson),
-        covariance: Field.asFloat64List(json['covariance']),
+        covariance: json['covariance'] == null
+            ? null
+            : Field.asFloat64List(json['covariance']),
       );
 
   final GeoPose pose;

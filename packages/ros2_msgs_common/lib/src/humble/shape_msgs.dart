@@ -63,7 +63,9 @@ final class MeshTriangle implements RosMessage {
   }) : vertexIndices = vertexIndices ?? Uint32List(3);
 
   factory MeshTriangle.fromJson(Map<String, Object?> json) => MeshTriangle(
-        vertexIndices: Field.asUint32List(json['vertex_indices']),
+        vertexIndices: json['vertex_indices'] == null
+            ? null
+            : Field.asUint32List(json['vertex_indices']),
       );
 
   /// Fixed length: 3.
@@ -106,7 +108,7 @@ final class Plane implements RosMessage {
   }) : coef = coef ?? Float64List(4);
 
   factory Plane.fromJson(Map<String, Object?> json) => Plane(
-        coef: Field.asFloat64List(json['coef']),
+        coef: json['coef'] == null ? null : Field.asFloat64List(json['coef']),
       );
 
   /// Fixed length: 4.
@@ -148,7 +150,9 @@ final class SolidPrimitive implements RosMessage {
 
   factory SolidPrimitive.fromJson(Map<String, Object?> json) => SolidPrimitive(
         type: Field.intAt(json, 'type'),
-        dimensions: Field.asFloat64List(json['dimensions']),
+        dimensions: json['dimensions'] == null
+            ? null
+            : Field.asFloat64List(json['dimensions']),
         polygon: Field.asMessage(json['polygon'], Polygon.fromJson),
       );
 
