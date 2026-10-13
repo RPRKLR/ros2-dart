@@ -18,22 +18,14 @@ Nothing published offers typed messages, ROS 2 actions, QoS control, or
 resilience. That is the opening this project targets — the gap is real and
 nobody currently holds it.
 
-## Next release: 0.3.0
+## Next release: 0.4.0
 
-The `vX.Y` headings below are feature groups, not package versions: 0.2.0
-shipped transforms, backpressure and TLS from three of them. 0.3.0 is scoped
-here instead.
-
-**Theme: a robot you can navigate from the app.** The widgets nobody else
-offers, built on the TF support that already works, plus the checks that stand
-between "compiles" and "runs".
+**Theme: finish navigating from the app.** What 0.3.0 left: placing a goal
+on the map, the diagnostics panel, and a browser making a service call and
+sending a goal.
 
 ### Widgets (`ros2_flutter`)
 
-- [ ] **`RosMapView`**: `nav_msgs/OccupancyGrid` (already bundled) rendered
-      once per map update into a cached image, never per frame; pan and zoom;
-      the robot's pose overlaid from TF (`map -> base_link`). The map arrives
-      over `transient_local`, so a late-opened view still gets it.
 - [ ] **Goal picker on the map**: press to place, drag to aim, and an
       `onGoal(PoseStamped)` callback. It sends nothing itself, so
       `ros2_flutter` keeps depending on `ros2_client` alone; the example shows
@@ -46,12 +38,40 @@ between "compiles" and "runs".
 ### Verification
 
 - [ ] **A browser connects to a real bridge**: dart2js and WASM builds of the
-      example against rosbridge 2.0.7, topics, a service and an action.
+      example against rosbridge 2.0.8, topics, a service and an action.
       *Topics done 2026-09-23*: both builds of the example, served from a
       fresh clone into headless Chrome against rosbridge 2.0.8, decode
       `BatteryState`, `Odometry`, a CBOR `LaserScan` with `inf`/`nan` and a
       JPEG `CompressedImage`. Still open: a service and an action from the
       browser, which the example never makes.
+
+## 0.3.0
+
+The `vX.Y` headings below are feature groups, not package versions: 0.2.0
+shipped transforms, backpressure and TLS from three of them. 0.3.0 is scoped
+here instead.
+
+**Theme: a robot you can navigate from the app.** The widgets nobody else
+offers, built on the TF support that already works, plus the checks that stand
+between "compiles" and "runs".
+
+Shipped as the map view, Jazzy support and the fixes from a three-way audit
+(client core, widgets, and tf/codegen/messages), 25 bugs in all, each with a
+regression test that fails without its fix. The rest of the theme moved to
+0.4.0 rather than hold those back.
+
+### Widgets (`ros2_flutter`)
+
+- [x] **`RosMapView`**: `nav_msgs/OccupancyGrid` (already bundled) rendered
+      once per map update into a cached image, never per frame; pan and zoom;
+      the robot's pose overlaid from TF (`map -> base_link`). The map arrives
+      over `transient_local`, so a late-opened view still gets it.
+      `example/real_map_check.dart` with `tool/robot_fixtures/map_pub.py`
+      confirms that against rosbridge 2.0.8: a map published before the
+      client connected arrives in CBOR and JSON with every cell intact, a
+      2048×2048 map arrives whole, and a volatile subscriber gets nothing.
+### Verification
+
 - [x] **A jumping `/clock`**: sim time reset under a running `TfListener`, as
       happens on every Gazebo restart. It froze: each post-restart sample was
       trimmed on arrival and lookups answered the pre-restart pose forever.

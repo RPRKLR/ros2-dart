@@ -56,9 +56,9 @@ ros2 node list           # /rosbridge_websocket and /rosapi
 
 ```yaml
 dependencies:
-  ros2_client: ^0.2.0        # pure Dart: topics, services, actions, TF
-  ros2_flutter: ^0.2.0       # optional: widgets
-  ros2_msgs_common: ^0.2.0   # optional: nav2, control, markers, diagnostics
+  ros2_client: ^0.3.0        # pure Dart: topics, services, actions, TF
+  ros2_flutter: ^0.3.0       # optional: widgets
+  ros2_msgs_common: ^0.3.0   # optional: nav2, control, markers, diagnostics
 ```
 
 `ros2_client` alone is enough for a console tool, a server, or a CLI. Add

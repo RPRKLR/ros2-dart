@@ -11,7 +11,7 @@ core types it already bundles — `Twist`, `Pose`, `PoseStamped`, `LaserScan`,
 
 ```yaml
 dependencies:
-  ros2_client: ^0.2.0
+  ros2_client: ^0.3.0
   ros2_msgs_common: ^0.3.0
 ```
 
