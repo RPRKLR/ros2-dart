@@ -15,7 +15,10 @@ import 'ros_connection.dart';
 /// RosTopicBuilder<BatteryState>(
 ///   topic: '/battery_state',
 ///   builder: (context, battery) => Text(
-///     battery == null ? '—' : '${(battery.percentage * 100).round()}%',
+///     // NaN: the robot cannot measure its charge, and many say so.
+///     battery == null || battery.percentage.isNaN
+///         ? '—'
+///         : '${(battery.percentage * 100).round()}%',
 ///   ),
 /// )
 /// ```

@@ -11,8 +11,10 @@
 ///       const Expanded(child: RosLaserScanView()),
 ///       RosTopicBuilder<BatteryState>(
 ///         topic: '/battery_state',
-///         builder: (context, b) =>
-///             Text(b == null ? '—' : '${(b.percentage * 100).round()}%'),
+///         // NaN: the robot cannot measure its charge, and many say so.
+///         builder: (context, b) => Text(b == null || b.percentage.isNaN
+///             ? '—'
+///             : '${(b.percentage * 100).round()}%'),
 ///       ),
 ///       const TeleopJoystick(),
 ///     ]),
