@@ -438,6 +438,56 @@ void main() {
           reason: 'the pre-restart history no longer applies');
     });
 
+    test('sim time going back by less than the cache window is followed', () {
+      // A reset 5 s into a run, or `ros2 bag play --loop` on a 5 s bag. The
+      // new stamps are within the window of the stale newest, so they are not
+      // outliers by distance, and the pre-restart samples kept answering
+      // "latest" and were interpolated against the new ones.
+      final buffer = TfBuffer(cacheTime: const Duration(seconds: 10));
+      for (var i = 0; i <= 50; i++) {
+        buffer.setTransform(tf('map', 'base',
+            x: 100.0 + i, sec: i ~/ 10, nanosec: i % 10 * 100000000));
+      }
+      for (var i = 0; i <= 30; i++) {
+        buffer.setTransform(tf('map', 'base',
+            x: i.toDouble(), sec: i ~/ 10, nanosec: i % 10 * 100000000));
+      }
+      expect(buffer.lookup('map', 'base')!.translation.x, 30);
+      expect(
+          buffer
+              .lookup('map', 'base', time: RosTime(sec: 1, nanosec: 50000000))!
+              .translation
+              .x,
+          closeTo(10.5, 1e-6),
+          reason: 'no interpolation across the restart');
+    });
+
+    test('a frame that reappears after a gap is not refused', () {
+      // A detected marker, published only while it is in view. The rest of
+      // the tree is at the new time, so the gap is not a clock jump; refusing
+      // the first nine samples after it left the marker frozen where it was.
+      final buffer = TfBuffer(cacheTime: const Duration(seconds: 10));
+      for (var i = 0; i <= 200; i++) {
+        final sec = 1000 + i ~/ 10;
+        final nanosec = i % 10 * 100000000;
+        buffer.setTransform(tf('map', 'odom', sec: sec, nanosec: nanosec));
+        if (i == 0) buffer.setTransform(tf('odom', 'tag', x: 1, sec: sec));
+      }
+      buffer.setTransform(tf('odom', 'tag', x: 2, sec: 1020));
+      expect(buffer.lookup('odom', 'tag')!.translation.x, 2);
+    });
+
+    test('a future stamp on one frame is still refused when the tree disagrees',
+        () {
+      final buffer = TfBuffer(cacheTime: const Duration(seconds: 10));
+      for (var i = 0; i <= 20; i++) {
+        buffer.setTransform(tf('map', 'odom', sec: 1000 + i));
+        buffer.setTransform(tf('odom', 'base', x: i.toDouble(), sec: 1000 + i));
+      }
+      buffer.setTransform(tf('odom', 'base', x: 99, sec: 1080));
+      expect(buffer.lookup('odom', 'base')!.translation.x, 20);
+    });
+
     test('one late-stamped sample does not unseat the buffer', () {
       final buffer = TfBuffer(cacheTime: const Duration(seconds: 10));
       for (var i = 0; i <= 20; i++) {

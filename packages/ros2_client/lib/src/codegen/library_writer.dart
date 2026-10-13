@@ -231,7 +231,10 @@ final class LibraryWriter {
       // to one Dart identifier just as a constant and a field can.
       final name = DartEmitter.constantName(constant.name, taken: taken);
       taken.add(name);
-      out.writeln('  static const $dartType $name = $value;');
+      final wide = dartType == 'int' ? DartEmitter.wideIntLiteral(value) : null;
+      out.writeln(wide == null
+          ? '  static const $dartType $name = $value;'
+          : '  static final int $name = $wide;');
     }
     if (message.constants.isNotEmpty) out.writeln();
 

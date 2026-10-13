@@ -58,6 +58,10 @@ abstract final class Field {
 
   static int asInt(Object? v) => switch (v) {
         final int i => i,
+        // A uint64 at or above 2^63 has no int form. Keep its bits, as the
+        // CBOR decoder and the uint64 typed arrays do: 2^64 - 1 reads as -1,
+        // and [encodeUint64] turns it back into the unsigned value.
+        final BigInt b => b.toUnsigned(64).toSigned(64).toInt(),
         final double d => d.toInt(),
         final String s => int.tryParse(s) ?? 0,
         Map() || List() => throw _notScalar('an integer', v),
@@ -220,6 +224,20 @@ abstract final class Field {
 
   /// Encodes a `uint8[]` for the JSON wire form.
   static Object encodeBytes(Uint8List bytes) => base64Encode(bytes);
+
+  /// Encodes a `uint64` for the wire.
+  ///
+  /// A Dart int holds a uint64 at or above 2^63 as its two's-complement bits,
+  /// so `2^64 - 1` is `-1`. Sent like that, rosbridge rejects the message:
+  /// the field must be non-negative. Those values go out as the unsigned
+  /// [BigInt] instead, which the wire encoder writes as bare digits; every
+  /// other value stays a plain int.
+  static Object encodeUint64(int value) =>
+      value >= 0 ? value : BigInt.from(value).toUnsigned(64);
+
+  /// Encodes a `uint64[]`, as [encodeUint64] does each element.
+  static List<Object> encodeUint64List(List<int> values) =>
+      [for (final v in values) encodeUint64(v)];
 
   /// Encodes a numeric typed array for the JSON wire form.
   static List<num> encodeNumbers(List<num> values) =>

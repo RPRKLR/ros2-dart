@@ -160,9 +160,15 @@ abstract final class TypedefParser {
       // Every field appears here too, carrying its default value, and so does
       // SLOT_TYPES, whose value is a Python repr with a memory address in it.
       if (name == _notAConstant || fieldNames.contains(name)) continue;
-      final value = typedef.constValues[i];
-      constants.add(ConstantDef(
-          type: inferConstantType(value), name: name, value: value));
+      final raw = typedef.constValues[i];
+      // rosapi renders a `byte` constant with Python's bytes repr, so
+      // diagnostic_msgs/DiagnosticStatus `byte OK=0` arrives as `b'\x00'`.
+      // Taken as a string, `status.level == DiagnosticStatus.ok` compiled and
+      // was always false.
+      final byte = parseBytesRepr(raw);
+      constants.add(byte != null
+          ? ConstantDef(type: 'byte', name: name, value: '$byte')
+          : ConstantDef(type: inferConstantType(raw), name: name, value: raw));
     }
     return constants;
   }
@@ -172,6 +178,44 @@ abstract final class TypedefParser {
   /// Only the stringified value survives the round trip, so the width is not
   /// recoverable — `int32` stands in for every integer type. That costs
   /// nothing downstream, since every ROS integer maps to a Dart `int`.
+  /// The value of a one-byte Python bytes repr such as `b'\x02'` or `b'A'`,
+  /// or `null` if [value] is not one.
+  static int? parseBytesRepr(String value) {
+    final match =
+        RegExp(r'''^b(['"])(.*)\1$''', dotAll: true).firstMatch(value);
+    if (match == null) return null;
+    final body = match.group(2)!;
+    final bytes = <int>[];
+    for (var i = 0; i < body.length; i++) {
+      final c = body[i];
+      if (c != r'\') {
+        bytes.add(body.codeUnitAt(i));
+        continue;
+      }
+      if (i + 1 >= body.length) return null;
+      final e = body[++i];
+      switch (e) {
+        case 'x':
+          if (i + 2 >= body.length) return null;
+          final hex = int.tryParse(body.substring(i + 1, i + 3), radix: 16);
+          if (hex == null) return null;
+          bytes.add(hex);
+          i += 2;
+        case 'n':
+          bytes.add(0x0a);
+        case 'r':
+          bytes.add(0x0d);
+        case 't':
+          bytes.add(0x09);
+        case r'\' || "'" || '"':
+          bytes.add(e.codeUnitAt(0));
+        default:
+          return null;
+      }
+    }
+    return bytes.length == 1 && bytes.single < 256 ? bytes.single : null;
+  }
+
   static String inferConstantType(String value) {
     if (value == 'True' || value == 'False') return 'bool';
     if (int.tryParse(value) != null) return 'int32';

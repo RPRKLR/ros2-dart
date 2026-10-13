@@ -42,7 +42,21 @@ final class _FrameHistory {
   /// How many in a row before the jump is accepted as a real clock change.
   static const int _outlierRejectLimit = 10;
 
+  /// Consecutive arrivals stamped before the newest sample held, in arrival
+  /// order.
+  final List<_Sample> _backwardRun = [];
+
+  /// How many arrivals in a row must go back in time before the clock is
+  /// taken to have restarted.
+  ///
+  /// Small, because one publisher's stamps for one frame reach the bridge in
+  /// order: a run of older stamps is a clock that went back, not reordering.
+  static const int _backwardRunLimit = 3;
+
   /// Adds a sample, returning false if it was rejected as a clock outlier.
+  ///
+  /// [clockMicros] is the stamp of the latest sample the buffer accepted for
+  /// any frame: the best evidence of what time it is now.
   ///
   /// One sample from a node whose clock is a minute fast would otherwise
   /// anchor the trim window a minute into the future, dropping every good
@@ -51,19 +65,47 @@ final class _FrameHistory {
   /// diagnostic. Clock skew between a robot and a bridge is routine.
   ///
   /// So a sample more than [cacheTime] away from the newest held, in either
-  /// direction, is refused. If they keep coming, the clock really has moved
-  /// and the buffer re-baselines onto it rather than rejecting good data
-  /// forever. Backwards is the common case: sim time restarts from zero on
-  /// every Gazebo restart, and without this each new sample was trimmed on
-  /// arrival while lookups kept answering the pose from before the restart.
-  bool insert(_Sample sample, Duration cacheTime) {
+  /// direction, is refused — unless the rest of the tree agrees with it. A
+  /// frame that is only published now and then (a detected marker, a docking
+  /// station) is not an outlier when it reappears: every other frame is
+  /// already at that time. Refusing it, as this once did, hid the first nine
+  /// samples after every gap and all but one in ten of a slow publisher's.
+  ///
+  /// If refused samples keep coming, the clock really has moved and the
+  /// buffer re-baselines onto it rather than rejecting good data forever.
+  /// Backwards is the common case: sim time restarts from zero on every
+  /// Gazebo restart. A jump back *within* the window is caught by its own
+  /// rule — a run of arrivals each older than the newest held — because
+  /// those samples are not outliers by distance: a reset early in a run, or
+  /// `ros2 bag play --loop` on a short bag, otherwise left the pre-restart
+  /// samples answering "latest" and interpolated across the restart.
+  bool insert(_Sample sample, Duration cacheTime, int? clockMicros) {
+    final window = cacheTime.inMicroseconds;
     if (samples.isNotEmpty &&
-        (sample.stampMicros - samples.last.stampMicros).abs() >
-            cacheTime.inMicroseconds) {
-      if (++_outlierRejects < _outlierRejectLimit) return false;
+        (sample.stampMicros - samples.last.stampMicros).abs() > window) {
+      final corroborated = clockMicros != null &&
+          (sample.stampMicros - clockMicros).abs() <= window;
+      if (!corroborated && ++_outlierRejects < _outlierRejectLimit) {
+        return false;
+      }
       samples.clear();
+      _backwardRun.clear();
     }
     _outlierRejects = 0;
+
+    if (samples.isNotEmpty && sample.stampMicros < samples.last.stampMicros) {
+      _backwardRun.add(sample);
+      if (_backwardRun.length >= _backwardRunLimit) {
+        // The clock went back: what came before no longer applies.
+        samples
+          ..clear()
+          ..addAll(_backwardRun..sort(_byStamp));
+        _backwardRun.clear();
+        return true;
+      }
+    } else {
+      _backwardRun.clear();
+    }
 
     // Usually append; a late-arriving sample needs an ordered insert.
     if (samples.isEmpty || sample.stampMicros >= samples.last.stampMicros) {
@@ -76,7 +118,7 @@ final class _FrameHistory {
       samples.insert(i, sample);
     }
 
-    final cutoff = samples.last.stampMicros - cacheTime.inMicroseconds;
+    final cutoff = samples.last.stampMicros - window;
     var drop = 0;
     while (drop < samples.length - 1 && samples[drop].stampMicros < cutoff) {
       drop++;
@@ -84,6 +126,9 @@ final class _FrameHistory {
     if (drop > 0) samples.removeRange(0, drop);
     return true;
   }
+
+  static int _byStamp(_Sample a, _Sample b) =>
+      a.stampMicros.compareTo(b.stampMicros);
 
   /// The transform at [micros], interpolating between the bracketing samples.
   ///
@@ -176,12 +221,18 @@ final class TfBuffer {
       history.staticTransform = stamped.transform;
       return;
     }
-    history.insert(
-      _Sample(
-          stamped.header.stamp.sinceEpoch.inMicroseconds, stamped.transform),
-      cacheTime,
-    );
+    final sample = _Sample(
+        stamped.header.stamp.sinceEpoch.inMicroseconds, stamped.transform);
+    if (history.insert(sample, cacheTime, _clockMicros)) {
+      _clockMicros = sample.stampMicros;
+    }
   }
+
+  /// The stamp of the latest dynamic sample accepted for any frame.
+  ///
+  /// Not the maximum: after a sim restart the newest stamp ever seen is the
+  /// one thing that is certainly wrong.
+  int? _clockMicros;
 
   /// The transform mapping points from [sourceFrame] into [targetFrame], or
   /// `null` if it cannot be resolved.
@@ -294,7 +345,10 @@ final class TfBuffer {
     }
   }
 
-  void clear() => _frames.clear();
+  void clear() {
+    _frames.clear();
+    _clockMicros = null;
+  }
 
   bool _isKnownParent(String frame) =>
       _frames.values.any((h) => h.parent == frame);

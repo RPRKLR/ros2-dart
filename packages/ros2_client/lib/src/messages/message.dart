@@ -58,7 +58,16 @@ abstract final class MessageRegistry {
   /// Registers [codec] for Dart type [T]. Idempotent for identical types.
   static void register<T>(MessageCodec<T> codec) {
     _byDartType[T] = codec as MessageCodec<Object?>;
-    _byRosType[codec.rosType] = codec as MessageCodec<Object?>;
+    // Looked up by name, the codec is used as a `MessageCodec<Object?>`, and
+    // reading `toJson` from a `MessageCodec<Twist>` through that type fails
+    // the covariance check: `(Twist) => Map` is not an `(Object?) => Map`.
+    // So the name map holds a view whose functions really take `Object?`.
+    final untyped = MessageCodec<Object?>(
+      rosType: codec.rosType,
+      fromJson: codec.fromJson,
+      toJson: (value) => codec.toJson(value as T),
+    );
+    _byRosType[codec.rosType] = untyped;
     // ROS 1-style names (`std_msgs/String`) still appear in the wild and in
     // some rosbridge responses; accept them as aliases.
     final short = _shortName(codec.rosType);
@@ -66,7 +75,7 @@ abstract final class MessageRegistry {
       // Overwrites rather than putIfAbsent: the full name above always takes
       // the newest registration, so keeping the first alias would leave the
       // two names for one ROS type resolving to different codecs.
-      _byRosType[short] = codec as MessageCodec<Object?>;
+      _byRosType[short] = untyped;
     }
   }
 

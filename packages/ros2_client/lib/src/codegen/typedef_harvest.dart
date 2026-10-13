@@ -5,6 +5,8 @@
 /// CLI and this half stays testable.
 library;
 
+import 'dart:async';
+
 import 'interface_def.dart';
 import 'typedef_parser.dart';
 
@@ -140,5 +142,44 @@ final class TypedefHarvest {
       return (null, '');
     }
     return (parts.first, parts.last);
+  }
+}
+
+/// Decides when an online run should stop asking `rosapi` for definitions.
+///
+/// Asking `rosapi` to describe a type with a bounded array, a bounded string
+/// or a `wstring` does not merely fail that one call. On rosbridge 2.0.8 the
+/// `AssertionError` it raises escapes the service callback and **kills the
+/// `rosapi` node**. Every later request then fails with "Service /rosapi/...
+/// does not exist" — or, on a bridge that blocks on service calls, waits out
+/// its full timeout — so carrying on cost 45 s per remaining type and never
+/// produced anything. One clear stop is better.
+final class RosapiFailurePolicy {
+  int _consecutiveTimeouts = 0;
+
+  /// Records a successful request.
+  void onSuccess() => _consecutiveTimeouts = 0;
+
+  /// Records a failed request, returning why the run should stop, or `null`
+  /// to carry on with the next type.
+  String? onFailure(Object error) {
+    final text = '$error';
+    if (text.contains('does not exist')) {
+      return 'rosapi is no longer running on the robot. Describing a type '
+          'with a bounded array, a bounded string or a wstring crashes the '
+          'rosapi node; restart rosbridge before using introspection again, '
+          'and generate those packages from source with --search.';
+    }
+    if (error is TimeoutException || text.contains('TimeoutException')) {
+      if (++_consecutiveTimeouts >= 2) {
+        return 'rosapi has stopped answering. It has probably crashed on a '
+            'type it cannot describe (bounded arrays, bounded strings, '
+            'wstring); restart rosbridge, and generate those packages from '
+            'source with --search.';
+      }
+    } else {
+      _consecutiveTimeouts = 0;
+    }
+    return null;
   }
 }

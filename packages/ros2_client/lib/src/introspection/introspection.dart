@@ -191,11 +191,17 @@ extension Ros2Introspection on Ros2Client {
   /// codegen library turns them into the same definitions the `.msg` parser
   /// produces.
   ///
-  /// **`rosapi` cannot describe a type with a bounded array or bounded
-  /// string.** `sequence<T, N>` and `string<N>` both make it raise an
-  /// `AssertionError` internally, which arrives here as a failed service call.
-  /// Generate those packages from source instead. Verified against rosapi
-  /// 2.0.7 on Humble with `shape_msgs/SolidPrimitive`.
+  /// **`rosapi` cannot describe a type with a bounded array, a bounded string
+  /// or a `wstring`, and asking crashes the `rosapi` node.**
+  /// `sequence<T, N>`, `string<N>` and `wstring` all make it raise an
+  /// `AssertionError` that escapes its service callback, and the node exits.
+  /// This call then times out, and every later `rosapi` request — every
+  /// method in this extension, `probeBridge` and the parameter calls included
+  /// — fails with "Service /rosapi/... does not exist" until rosbridge is
+  /// relaunched. Do not point this at a robot in service for such a type;
+  /// generate those packages from source instead. Verified against rosapi
+  /// 2.0.8 on Humble with `shape_msgs/SolidPrimitive` and
+  /// `example_interfaces/WString`.
   Future<List<Map<String, Object?>>> messageTypedefs(String type,
           {Duration timeout = graphQueryTimeout}) =>
       _typedefs('/rosapi/message_details', type, timeout);

@@ -245,23 +245,53 @@ final class Imu implements RosMessage {
   const Imu({
     this.header = const Header(),
     this.orientation = Quaternion.identity,
+    this.orientationCovariance = const <double>[],
     this.angularVelocity = Vector3.zero,
+    this.angularVelocityCovariance = const <double>[],
     this.linearAcceleration = Vector3.zero,
+    this.linearAccelerationCovariance = const <double>[],
   });
 
   factory Imu.fromJson(Map<String, Object?> json) => Imu(
         header: Field.asMessage(json['header'], Header.fromJson),
         orientation: Field.asMessage(json['orientation'], Quaternion.fromJson),
+        orientationCovariance:
+            Field.asFloat64List(json['orientation_covariance']),
         angularVelocity:
             Field.asMessage(json['angular_velocity'], Vector3.fromJson),
+        angularVelocityCovariance:
+            Field.asFloat64List(json['angular_velocity_covariance']),
         linearAcceleration:
             Field.asMessage(json['linear_acceleration'], Vector3.fromJson),
+        linearAccelerationCovariance:
+            Field.asFloat64List(json['linear_acceleration_covariance']),
       );
 
   final Header header;
   final Quaternion orientation;
+
+  /// Row-major 3x3 covariance about the x, y and z axes, or empty if the
+  /// message carried none (encoded as nine zeros, the ROS default).
+  ///
+  /// Per REP-145 a first element of `-1` means the sensor reports no
+  /// orientation at all and [orientation] must be ignored. Dropping this,
+  /// as decoding used to, made a gyro-only IMU's meaningless orientation look
+  /// like a measurement.
+  final List<double> orientationCovariance;
+
   final Vector3 angularVelocity;
+
+  /// As [orientationCovariance], for [angularVelocity].
+  final List<double> angularVelocityCovariance;
+
   final Vector3 linearAcceleration;
+
+  /// As [orientationCovariance], for [linearAcceleration].
+  final List<double> linearAccelerationCovariance;
+
+  /// Whether the IMU reports an orientation (REP-145).
+  bool get hasOrientation =>
+      orientationCovariance.isEmpty || orientationCovariance.first != -1;
 
   @override
   String get rosType => 'sensor_msgs/msg/Imu';
@@ -270,8 +300,12 @@ final class Imu implements RosMessage {
   Map<String, Object?> toJson() => {
         'header': header.toJson(),
         'orientation': orientation.toJson(),
+        'orientation_covariance': _covariance3(orientationCovariance),
         'angular_velocity': angularVelocity.toJson(),
+        'angular_velocity_covariance': _covariance3(angularVelocityCovariance),
         'linear_acceleration': linearAcceleration.toJson(),
+        'linear_acceleration_covariance':
+            _covariance3(linearAccelerationCovariance),
       };
 
   @override
@@ -280,15 +314,23 @@ final class Imu implements RosMessage {
       (other is Imu &&
           other.header == header &&
           other.orientation == orientation &&
+          _listEquals(other.orientationCovariance, orientationCovariance) &&
           other.angularVelocity == angularVelocity &&
-          other.linearAcceleration == linearAcceleration);
+          _listEquals(
+              other.angularVelocityCovariance, angularVelocityCovariance) &&
+          other.linearAcceleration == linearAcceleration &&
+          _listEquals(other.linearAccelerationCovariance,
+              linearAccelerationCovariance));
 
   @override
   int get hashCode => Object.hash(
         header,
         orientation,
+        Object.hashAll(orientationCovariance),
         angularVelocity,
+        Object.hashAll(angularVelocityCovariance),
         linearAcceleration,
+        Object.hashAll(linearAccelerationCovariance),
       );
 }
 
@@ -367,6 +409,14 @@ final class BatteryState implements RosMessage {
     this.percentage = 0,
     this.powerSupplyStatus = 0,
     this.present = false,
+    this.temperature = 0,
+    this.designCapacity = 0,
+    this.powerSupplyHealth = 0,
+    this.powerSupplyTechnology = 0,
+    this.cellVoltage = const <double>[],
+    this.cellTemperature = const <double>[],
+    this.location = '',
+    this.serialNumber = '',
   });
 
   factory BatteryState.fromJson(Map<String, Object?> json) => BatteryState(
@@ -378,7 +428,37 @@ final class BatteryState implements RosMessage {
         percentage: Field.doubleAt(json, 'percentage'),
         powerSupplyStatus: Field.intAt(json, 'power_supply_status'),
         present: Field.boolAt(json, 'present'),
+        temperature: Field.doubleAt(json, 'temperature'),
+        designCapacity: Field.doubleAt(json, 'design_capacity'),
+        powerSupplyHealth: Field.intAt(json, 'power_supply_health'),
+        powerSupplyTechnology: Field.intAt(json, 'power_supply_technology'),
+        cellVoltage: Field.asFloat32List(json['cell_voltage']),
+        cellTemperature: Field.asFloat32List(json['cell_temperature']),
+        location: Field.stringAt(json, 'location'),
+        serialNumber: Field.stringAt(json, 'serial_number'),
       );
+
+  static const int powerSupplyStatusUnknown = 0;
+  static const int powerSupplyStatusCharging = 1;
+  static const int powerSupplyStatusDischarging = 2;
+  static const int powerSupplyStatusNotCharging = 3;
+  static const int powerSupplyStatusFull = 4;
+  static const int powerSupplyHealthUnknown = 0;
+  static const int powerSupplyHealthGood = 1;
+  static const int powerSupplyHealthOverheat = 2;
+  static const int powerSupplyHealthDead = 3;
+  static const int powerSupplyHealthOvervoltage = 4;
+  static const int powerSupplyHealthUnspecFailure = 5;
+  static const int powerSupplyHealthCold = 6;
+  static const int powerSupplyHealthWatchdogTimerExpire = 7;
+  static const int powerSupplyHealthSafetyTimerExpire = 8;
+  static const int powerSupplyTechnologyUnknown = 0;
+  static const int powerSupplyTechnologyNimh = 1;
+  static const int powerSupplyTechnologyLion = 2;
+  static const int powerSupplyTechnologyLipo = 3;
+  static const int powerSupplyTechnologyLife = 4;
+  static const int powerSupplyTechnologyNicd = 5;
+  static const int powerSupplyTechnologyLimn = 6;
 
   final Header header;
   final double voltage, current, charge, capacity;
@@ -387,6 +467,28 @@ final class BatteryState implements RosMessage {
   final double percentage;
   final int powerSupplyStatus;
   final bool present;
+
+  /// Degrees Celsius; NaN if not measured.
+  final double temperature;
+
+  /// Design capacity in Ah; NaN if not known.
+  final double designCapacity;
+
+  /// One of the `powerSupplyHealth*` constants.
+  final int powerSupplyHealth;
+
+  /// One of the `powerSupplyTechnology*` constants.
+  final int powerSupplyTechnology;
+
+  /// Per-cell voltages in volts, NaN for a cell that is not measured.
+  final List<double> cellVoltage;
+
+  /// Per-cell temperatures in degrees Celsius.
+  final List<double> cellTemperature;
+
+  /// Where the battery is fitted, e.g. its slot.
+  final String location;
+  final String serialNumber;
 
   bool get isCharging => powerSupplyStatus == 1;
 
@@ -397,12 +499,20 @@ final class BatteryState implements RosMessage {
   Map<String, Object?> toJson() => {
         'header': header.toJson(),
         'voltage': voltage,
+        'temperature': temperature,
         'current': current,
         'charge': charge,
         'capacity': capacity,
+        'design_capacity': designCapacity,
         'percentage': percentage,
         'power_supply_status': powerSupplyStatus,
+        'power_supply_health': powerSupplyHealth,
+        'power_supply_technology': powerSupplyTechnology,
         'present': present,
+        'cell_voltage': Field.encodeNumbers(cellVoltage),
+        'cell_temperature': Field.encodeNumbers(cellTemperature),
+        'location': location,
+        'serial_number': serialNumber,
       };
 
   @override
@@ -416,7 +526,15 @@ final class BatteryState implements RosMessage {
           other.capacity == capacity &&
           other.percentage == percentage &&
           other.powerSupplyStatus == powerSupplyStatus &&
-          other.present == present);
+          other.present == present &&
+          other.temperature == temperature &&
+          other.designCapacity == designCapacity &&
+          other.powerSupplyHealth == powerSupplyHealth &&
+          other.powerSupplyTechnology == powerSupplyTechnology &&
+          _listEquals(other.cellVoltage, cellVoltage) &&
+          _listEquals(other.cellTemperature, cellTemperature) &&
+          other.location == location &&
+          other.serialNumber == serialNumber);
 
   @override
   int get hashCode => Object.hash(
@@ -428,6 +546,14 @@ final class BatteryState implements RosMessage {
         percentage,
         powerSupplyStatus,
         present,
+        temperature,
+        designCapacity,
+        powerSupplyHealth,
+        powerSupplyTechnology,
+        Object.hashAll(cellVoltage),
+        Object.hashAll(cellTemperature),
+        location,
+        serialNumber,
       );
 }
 
@@ -441,6 +567,8 @@ final class NavSatFix implements RosMessage {
     this.altitude = 0,
     this.status = 0,
     this.service = 0,
+    this.positionCovariance = const <double>[],
+    this.positionCovarianceType = covarianceTypeUnknown,
   });
 
   factory NavSatFix.fromJson(Map<String, Object?> json) => NavSatFix(
@@ -452,7 +580,14 @@ final class NavSatFix implements RosMessage {
             (json['status'] as Map<String, Object?>?)?['status'] ?? -1),
         service: Field.asInt(
             (json['status'] as Map<String, Object?>?)?['service'] ?? 0),
+        positionCovariance: Field.asFloat64List(json['position_covariance']),
+        positionCovarianceType: Field.intAt(json, 'position_covariance_type'),
       );
+
+  static const int covarianceTypeUnknown = 0;
+  static const int covarianceTypeApproximated = 1;
+  static const int covarianceTypeDiagonalKnown = 2;
+  static const int covarianceTypeKnown = 3;
 
   final Header header;
   final double latitude, longitude, altitude;
@@ -465,6 +600,15 @@ final class NavSatFix implements RosMessage {
   /// discard which constellations a receiver actually saw.
   final int service;
 
+  /// Row-major 3x3 position covariance in m², east-north-up, or empty if the
+  /// message carried none (encoded as nine zeros, the ROS default). Without
+  /// it a UI cannot draw an accuracy circle, and relaying a fix discarded it.
+  final List<double> positionCovariance;
+
+  /// How far to trust [positionCovariance]: one of the `covarianceType*`
+  /// constants.
+  final int positionCovarianceType;
+
   bool get hasFix => status >= 0;
 
   @override
@@ -473,10 +617,12 @@ final class NavSatFix implements RosMessage {
   @override
   Map<String, Object?> toJson() => {
         'header': header.toJson(),
+        'status': {'status': status, 'service': service},
         'latitude': latitude,
         'longitude': longitude,
         'altitude': altitude,
-        'status': {'status': status, 'service': service},
+        'position_covariance': _covariance3(positionCovariance),
+        'position_covariance_type': positionCovarianceType,
       };
 
   @override
@@ -488,7 +634,9 @@ final class NavSatFix implements RosMessage {
           other.longitude == longitude &&
           other.altitude == altitude &&
           other.status == status &&
-          other.service == service);
+          other.service == service &&
+          _listEquals(other.positionCovariance, positionCovariance) &&
+          other.positionCovarianceType == positionCovarianceType);
 
   @override
   int get hashCode => Object.hash(
@@ -498,6 +646,8 @@ final class NavSatFix implements RosMessage {
         altitude,
         status,
         service,
+        Object.hashAll(positionCovariance),
+        positionCovarianceType,
       );
 }
 
@@ -723,6 +873,12 @@ void registerSensorMsgs() {
 }
 
 Map<String, Object?> _toJson(RosMessage m) => m.toJson();
+
+/// A `float64[9]` covariance for the wire: the values given, or nine zeros
+/// (the ROS default) when none were. rosbridge asserts the exact length and
+/// drops a publish whose array is short.
+List<num> _covariance3(List<double> values) =>
+    values.length == 9 ? Field.encodeNumbers(values) : List<num>.filled(9, 0.0);
 
 /// Element-wise comparison, so two structurally identical messages holding
 /// separate typed-data buffers still compare equal.
