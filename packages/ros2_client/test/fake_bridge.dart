@@ -17,6 +17,9 @@ final class FakeBridge implements RosTransport {
 
   bool failConnect;
   bool connected = false;
+
+  /// Bookkeeping for tests that echo frames back; unused by the fake itself.
+  int echoed = 0;
   int connectAttempts = 0;
 
   @override

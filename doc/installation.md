@@ -32,7 +32,7 @@ ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
 | Argument | Why |
 |---|---|
 | `max_message_size` | **A CBOR message larger than this is silently dropped.** Default is 10 MB under the launch file, 1 MB for a bare node. A 640×480 `rgb8` image is 900 KB of CBOR; 1080p is ~6 MB. See [the size ceiling](#the-cbor-size-ceiling). |
-| `call_services_in_new_thread` | Defaults false. A service call that never returns then wedges *the whole connection* — no further subscribes, publishes or unsubscribes — for as long as it hangs, and the default service timeout is "wait forever". |
+| `call_services_in_new_thread` | Defaults false. A slow service call then holds up *the whole connection* — no further subscribes, publishes, unsubscribes or calls — for as long as it runs. The bridge's own default timeout is "wait forever"; since 0.3.0 this client sends each call's `timeout`, so the hold lasts at most that long, but other clients on the same bridge may not. |
 | `send_action_goals_in_new_thread` | Defaults false. While a goal runs, every other message from that client is queued and unprocessed, and `cancel()` cannot be delivered at all. |
 
 Do not add `params_glob:="[*]"`, which earlier versions of this guide

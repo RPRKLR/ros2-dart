@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:cbor/cbor.dart';
@@ -62,7 +63,17 @@ abstract final class WireCodec {
       return out;
     }
     if (value is CborString) return value.toString();
-    if (value is CborInt) return value.toInt();
+    if (value is CborSmallInt) return value.toInt();
+    if (value is CborInt) {
+      // A uint64 at or above 2^63 does not fit an int, and toInt() clamps it
+      // to int64 max, so every large value collapses to one. Keep the bits,
+      // as the uint64 typed-array path does: read back as unsigned they are
+      // the value that was sent.
+      final big = value.toBigInt();
+      return big.isValidInt
+          ? big.toInt()
+          : big.toUnsigned(64).toSigned(64).toInt();
+    }
     if (value is CborFloat) return value.value;
     if (value is CborBool) return value.value;
     if (value is CborNull || value is CborUndefined) return null;
@@ -95,15 +106,90 @@ abstract final class WireCodec {
   /// those values constantly — every out-of-range lidar beam is `inf` — so a
   /// strict parse would kill an entire topic on the first scan. The fast path
   /// is untouched; the rewrite only runs after a parse has already failed.
+  ///
+  /// An integer beyond int64 -- a `uint64` at or above 2^63 -- would come back
+  /// from `jsonDecode` as a double with its low bits gone. Such a literal is
+  /// rewritten to the int64 with the same bits, as the CBOR path decodes it;
+  /// read it back with `toUnsigned(64)`. That check costs a regex scan, and
+  /// the re-parse runs only when the scan finds a 19-digit run.
   static Object? decodeJson(String source) {
+    Object? decoded;
     try {
-      return jsonDecode(source);
+      decoded = jsonDecode(source);
     } on FormatException {
       final repaired = _replaceNonFiniteLiterals(source);
       if (repaired == null) rethrow;
-      return jsonDecode(repaired);
+      source = repaired;
+      decoded = jsonDecode(source);
     }
+    if (!_nineteenDigits.hasMatch(source)) return decoded;
+    final rewritten = _foldWideIntegers(source);
+    return rewritten == null ? decoded : jsonDecode(rewritten);
   }
+
+  /// The shortest digit run that can exceed int64: 2^63 has 19 digits.
+  static final _nineteenDigits = RegExp(r'\d{19}');
+
+  // Parsed, not literals: dart2js refuses an integer literal beyond 2^53.
+  static final _int64Min = BigInt.parse('-9223372036854775808');
+  static final _int64Max = BigInt.parse('9223372036854775807');
+
+  /// Rewrites integer literals outside int64 to the int64 with the same low
+  /// 64 bits, leaving string literals alone. Returns `null` if none needed it.
+  static String? _foldWideIntegers(String source) {
+    final out = StringBuffer();
+    var changed = false;
+    var i = 0;
+    var inString = false;
+    while (i < source.length) {
+      final unit = source.codeUnitAt(i);
+      if (inString) {
+        if (unit == 0x5c /* \ */) {
+          out.write(source.substring(i, math.min(i + 2, source.length)));
+          i += 2;
+          continue;
+        }
+        if (unit == 0x22 /* " */) inString = false;
+        out.writeCharCode(unit);
+        i++;
+        continue;
+      }
+      if (unit == 0x22) {
+        inString = true;
+        out.writeCharCode(unit);
+        i++;
+        continue;
+      }
+      final isDigit = unit >= 0x30 && unit <= 0x39;
+      if (isDigit || unit == 0x2d /* - */) {
+        var end = i + 1;
+        while (end < source.length && _isNumberChar(source.codeUnitAt(end))) {
+          end++;
+        }
+        final token = source.substring(i, end);
+        final value = BigInt.tryParse(token);
+        if (value != null && (value > _int64Max || value < _int64Min)) {
+          out.write(value.toUnsigned(64).toSigned(64));
+          changed = true;
+        } else {
+          out.write(token);
+        }
+        i = end;
+        continue;
+      }
+      out.writeCharCode(unit);
+      i++;
+    }
+    return changed ? out.toString() : null;
+  }
+
+  static bool _isNumberChar(int unit) =>
+      (unit >= 0x30 && unit <= 0x39) ||
+      unit == 0x2e /* . */ ||
+      unit == 0x65 /* e */ ||
+      unit == 0x45 /* E */ ||
+      unit == 0x2b /* + */ ||
+      unit == 0x2d /* - */;
 
   /// Rewrites bare `Infinity` / `-Infinity` / `NaN` tokens to JSON-legal forms,
   /// skipping anything inside a string literal so a message whose *text*
@@ -175,8 +261,29 @@ abstract final class WireCodec {
   /// republishing a `LaserScan` whose out-of-range beams are `inf` crashes.
   /// `null` is also exactly what rosbridge itself puts on the wire for a
   /// non-finite float, so this matches the encoding on the way back in.
-  static String encode(Map<String, Object?> command) =>
-      jsonEncode(command, toEncodable: _encodable);
+  ///
+  /// A [BigInt] is written as its bare digits, which `jsonEncode` cannot do:
+  /// it is how a `uint64` at or above 2^63 reaches the bridge, which would
+  /// reject the negative int64 holding the same bits. It goes out as a marked
+  /// string and the marks are stripped afterwards, a pass that runs only when
+  /// the command held one.
+  static String encode(Map<String, Object?> command) {
+    var sawBigInt = false;
+    final text = jsonEncode(command, toEncodable: (value) {
+      if (value is BigInt) {
+        sawBigInt = true;
+        return '$_bigIntMark$value$_bigIntMark';
+      }
+      return _encodable(value);
+    });
+    if (!sawBigInt) return text;
+    return text.replaceAllMapped(_markedBigInt, (m) => m[1]!);
+  }
+
+  /// A NUL either side: `jsonEncode` writes it as `\u0000`, which no number
+  /// and no realistic message text contains.
+  static const _bigIntMark = '\u0000';
+  static final _markedBigInt = RegExp(r'"\\u0000(-?\d+)\\u0000"');
 
   static Object? _encodable(Object? value) {
     if (value is double && !value.isFinite) return null;

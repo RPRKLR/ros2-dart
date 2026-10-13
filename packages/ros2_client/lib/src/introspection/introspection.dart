@@ -264,10 +264,11 @@ extension Ros2Introspection on Ros2Client {
   /// **not** by calling that service: on a default-launched bridge
   /// `call_services_in_new_thread` is false and
   /// `default_call_service_timeout` is `0.0`, so calling a service that does
-  /// not exist parks the bridge's only queue thread *for the life of the
-  /// connection*. A diagnostic that can wedge the link it is diagnosing is
-  /// worse than the problem. `/rosapi/services` exists in every version, so
-  /// asking it what exists is free of that.
+  /// not exist parks the bridge's only queue thread until the call's timeout,
+  /// and every other request on the connection waits behind it. A diagnostic
+  /// that stalls the link it is diagnosing is worse than the problem.
+  /// `/rosapi/services` exists in every version, so asking it what exists is
+  /// free of that.
   ///
   /// Needs `rosapi` running. `rosbridge_websocket_launch.xml` starts it, but a
   /// bare `ros2 run rosbridge_server rosbridge_websocket` does not, and then

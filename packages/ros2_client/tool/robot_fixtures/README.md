@@ -76,6 +76,28 @@ it, in CBOR and JSON, with every cell intact including the `-1` unknowns; a
 4 MiB map arrives whole; and, as the control, a volatile subscriber gets
 nothing. `RosMapView` depends on all of it.
 
+## `slow_service.py` and `freeze_proxy.py` — a link under stress
+
+`slow_service.py` serves `/slow`, which answers after 8 s, and `/fast`.
+`freeze_proxy.py` sits between client and bridge and, on `SIGUSR1`, stops
+forwarding without closing anything, the way a Wi-Fi dropout looks to a
+socket.
+
+```bash
+python3 slow_service.py &
+ros2 run demo_nodes_cpp talker &
+python3 freeze_proxy.py 9091 9090 & A=$!
+python3 freeze_proxy.py 9092 9090 & B=$!
+cd ../.. && dart run example/real_link_check.dart \
+  ws://localhost:9090 ws://localhost:9091 $A ws://localhost:9092 $B
+```
+
+Covers: a call after a timed-out one is not held up behind it; two listeners
+on `/chatter` each see every message once; an idle healthy link survives its
+pings, and, with pings off as in a browser, its idle probes; a silent link is
+noticed both ways. Without the fixes the second call waits out its own
+timeout, a message arrives twice, and the silent link is never noticed.
+
 ## TLS
 
 `example/secure_connection.dart` needs a bridge launched with TLS instead:

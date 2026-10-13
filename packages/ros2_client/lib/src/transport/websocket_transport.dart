@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'connect_channel.dart' if (dart.library.io) 'connect_channel_io.dart';
 import 'transport.dart';
 
 /// A [RosTransport] over a WebSocket, working on every Flutter target
@@ -11,23 +12,30 @@ final class WebSocketTransport implements RosTransport {
     this.uri, {
     this.protocols,
     this.connectTimeout = const Duration(seconds: 10),
+    this.pingInterval = const Duration(seconds: 5),
     WebSocketChannel Function(Uri, {Iterable<String>? protocols})?
         channelFactory,
-  }) : _channelFactory = channelFactory ?? _defaultFactory;
+  }) : _channelFactory = channelFactory;
 
   final Uri uri;
   final Iterable<String>? protocols;
   final Duration connectTimeout;
-  final WebSocketChannel Function(Uri, {Iterable<String>? protocols})
+
+  /// How often to ping the bridge, or `null` not to.
+  ///
+  /// A Wi-Fi drop or a robot losing power usually leaves the socket half
+  /// open: nothing arrives, nothing errors, and without pings the client
+  /// stays "connected" indefinitely while every command goes nowhere. A ping
+  /// unanswered by the next one closes the link and starts a reconnect, so
+  /// one is noticed within about twice this. Native platforms only; browsers
+  /// do not let a page send pings. Ignored when a `channelFactory` is given.
+  final Duration? pingInterval;
+  final WebSocketChannel Function(Uri, {Iterable<String>? protocols})?
       _channelFactory;
 
   WebSocketChannel? _channel;
   final _incoming = StreamController<Object>.broadcast();
   bool _closed = false;
-
-  static WebSocketChannel _defaultFactory(Uri uri,
-          {Iterable<String>? protocols}) =>
-      WebSocketChannel.connect(uri, protocols: protocols);
 
   @override
   Stream<Object> get incoming => _incoming.stream;
@@ -39,7 +47,10 @@ final class WebSocketTransport implements RosTransport {
           'WebSocketTransport has been closed and cannot reconnect. '
           'Create a new instance.');
     }
-    final channel = _channelFactory(uri, protocols: protocols);
+    final factory = _channelFactory;
+    final channel = factory != null
+        ? factory(uri, protocols: protocols)
+        : connectChannel(uri, protocols: protocols, pingInterval: pingInterval);
     _channel = channel;
 
     await channel.ready.timeout(
