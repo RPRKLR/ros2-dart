@@ -59,6 +59,7 @@ class ControlPanel extends StatelessWidget {
                     child: _Card(title: 'Camera', child: RosCameraView())),
                 const Expanded(
                     child: _Card(title: 'Lidar', child: RosLaserScanView())),
+                const Expanded(child: _Card(title: 'Map', child: RosMapView())),
               ];
               return Column(
                 children: [

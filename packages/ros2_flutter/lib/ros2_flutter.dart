@@ -28,5 +28,6 @@ export 'src/ros_stream_builder.dart' show RosTopicBuilder;
 export 'src/widgets/camera_view.dart' show RosCameraView, RosRawImageView;
 export 'src/widgets/connection_status.dart' show RosConnectionStatus;
 export 'src/widgets/laser_scan_view.dart' show RosLaserScanView;
+export 'src/widgets/map_view.dart' show RosMapView;
 export 'src/widgets/teleop_joystick.dart' show TeleopJoystick, TeleopPad;
 export 'src/widgets/tf_frame_builder.dart' show TfFrameBuilder;

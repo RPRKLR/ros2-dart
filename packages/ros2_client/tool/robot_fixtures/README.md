@@ -61,6 +61,21 @@ cd ../.. && dart run example/real_clock_jump_check.dart
 Covers: the buffer following sim time back to zero, then on, and forward
 again. Before the fix it kept answering the pre-restart pose forever.
 
+## `map_pub.py` — a latched map
+
+Publishes `/map` (40×30, every cell checkable) and `/big_map` (2048×2048)
+once each, `transient_local`, the way `map_server` does, and then idles.
+
+```bash
+python3 map_pub.py &
+cd ../.. && dart run example/real_map_check.dart
+```
+
+Covers: a client that connects *after* the map was published still receives
+it, in CBOR and JSON, with every cell intact including the `-1` unknowns; a
+4 MiB map arrives whole; and, as the control, a volatile subscriber gets
+nothing. `RosMapView` depends on all of it.
+
 ## TLS
 
 `example/secure_connection.dart` needs a bridge launched with TLS instead:
