@@ -1,4 +1,7 @@
 // The robot's /diagnostics, through RosDiagnosticsPanel.
+// Deprecated in Flutter 3.50 for package:material_ui, a separate copy whose
+// widgets lose the theme and Material of apps still on this import.
+// ignore: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:ros2_flutter/ros2_flutter.dart';
 // The same distro as navigation.dart; diagnostic_msgs is identical in all.

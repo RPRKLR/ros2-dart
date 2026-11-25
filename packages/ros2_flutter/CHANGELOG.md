@@ -32,6 +32,13 @@ sends a Nav2 `NavigateToPose` goal, with progress, cancel, the reason Nav2
 gives when it aborts, and a costmap reset; and the diagnostics panel.
 
 * The pubspec description now mentions `RosMapView`.
+* Still built on `package:flutter/material.dart`, which Flutter 3.50
+  deprecates for `package:material_ui`. The two are separate copies: a
+  `material_ui` widget in an app on `flutter/material.dart` ignores the app's
+  theme and throws "No Material widget found", and the reverse holds too. Most
+  apps are still on `flutter/material.dart`, so this package stays there until
+  they move; the deprecation is silenced import by import, and nothing else
+  is.
 
 ## 0.3.0
 

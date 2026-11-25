@@ -1,6 +1,9 @@
 // Sending a Nav2 goal picked on the map, and showing how it went.
 import 'dart:async';
 
+// Deprecated in Flutter 3.50 for package:material_ui, a separate copy whose
+// widgets lose the theme and Material of apps still on this import.
+// ignore: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:ros2_flutter/ros2_flutter.dart';
 // One distro per app: match your robot's. The goal is the same on Humble,

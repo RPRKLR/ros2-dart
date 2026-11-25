@@ -3,6 +3,9 @@
 //
 // On the robot:
 //   ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+// Deprecated in Flutter 3.50 for package:material_ui, a separate copy whose
+// widgets lose the theme and Material of apps still on this import.
+// ignore: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:ros2_flutter/ros2_flutter.dart';
 import 'package:ros2_msgs_common/ros2_msgs_common.dart';
