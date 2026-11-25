@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.4.0
 
 **Verified against rosbridge 4.2.1 on ROS 2 Lyrical**, a major version past
 the 2.0.8 every earlier claim was checked against. The client needed no
