@@ -13,6 +13,9 @@ sudo apt install ros-${ROS_DISTRO}-rosbridge-suite
 ros2 launch rosbridge_server rosbridge_websocket_launch.xml
 ```
 
+Checked against Humble (rosbridge 2.0.7 and 2.0.8), Jazzy (2.7.1) and Lyrical
+(4.2.1).
+
 That starts a WebSocket server on port 9090 and a `rosapi` node beside it.
 `rosapi` is what answers introspection queries (topic lists, parameters,
 message definitions); without it, subscribing still works but
@@ -20,7 +23,7 @@ message definitions); without it, subscribing still works but
 
 ### Launch arguments worth setting
 
-Defaults that will bite you, all verified against `rosbridge_suite` 2.0.7:
+Defaults that will bite you. These three are safe on every version:
 
 ```bash
 ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
@@ -31,14 +34,33 @@ ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
 
 | Argument | Why |
 |---|---|
-| `max_message_size` | **A CBOR message larger than this is silently dropped.** Default is 10 MB under the launch file, 1 MB for a bare node. A 640×480 `rgb8` image is 900 KB of CBOR; 1080p is ~6 MB. See [the size ceiling](#the-cbor-size-ceiling). |
-| `call_services_in_new_thread` | Defaults false. A slow service call then holds up *the whole connection* — no further subscribes, publishes, unsubscribes or calls — for as long as it runs. The bridge's own default timeout is "wait forever"; since 0.3.0 this client sends each call's `timeout`, so the hold lasts at most that long, but other clients on the same bridge may not. |
-| `send_action_goals_in_new_thread` | Defaults false. While a goal runs, every other message from that client is queued and unprocessed, and `cancel()` cannot be delivered at all. |
+| `max_message_size` | **A CBOR message larger than this is silently dropped.** Default is 10 MB under the launch file, 1 MB for a bare node, on every version. A 640×480 `rgb8` image is 900 KB of CBOR; 1080p is ~6 MB. See [the size ceiling](#the-cbor-size-ceiling). |
+| `call_services_in_new_thread` | False by default on 2.x, true on 4.x. When false, a slow service call holds up *the whole connection* — no further subscribes, publishes, unsubscribes or calls — for as long as it runs. 2.x's own default timeout is "wait forever" (4.x waits 5 s); since 0.3.0 this client sends each call's `timeout`, so the hold lasts at most that long, but other clients on the same bridge may not. |
+| `send_action_goals_in_new_thread` | False by default on 2.x, true on 4.x. When false, every other message from that client is queued while a goal runs, and `cancel()` cannot be delivered at all. |
 
 Do not add `params_glob:="[*]"`, which earlier versions of this guide
-recommended. Current rosbridge (2.0.8 on Humble, 2.7.1 on Jazzy) lists every
-parameter without a glob, and that value stops the launch on both: YAML reads
-`*` as an alias.
+recommended. Current rosbridge lists every parameter without a glob, and that
+value stops the launch: YAML reads `*` as an alias.
+
+### Known problems in rosbridge 4.2.1 (Lyrical)
+
+All silent from the client's side, with the error only on the robot console:
+
+- **CBOR drops any message with a `byte` field**, such as
+  `diagnostic_msgs/DiagnosticStatus`. Subscribe to those topics with
+  `Compression.none`; `RosDiagnosticsPanel` already does.
+- **Bounded strings (`string<=N`) and `wstring`s cannot pass through** in
+  either direction. A custom message using one cannot be used over this
+  bridge.
+- **Large images arrive seconds late or not at all** (measured with
+  640×480 `rgb8`), while plain ROS receives the same topic at full rate.
+  Not yet understood; test your camera topics before relying on them.
+
+### Off the local network
+
+rosbridge has no authentication. Bind it to localhost with `address:=127.0.0.1`
+and put a reverse proxy in front for TLS and a token:
+[reverse proxy guide](reverse_proxy.md).
 
 For TLS, `rosbridge_websocket_launch.xml` takes `ssl:=true`, `certfile:=` and
 `keyfile:=`, and you then connect with `wss://`.
@@ -56,9 +78,9 @@ ros2 node list           # /rosbridge_websocket and /rosapi
 
 ```yaml
 dependencies:
-  ros2_client: ^0.3.0        # pure Dart: topics, services, actions, TF
-  ros2_flutter: ^0.3.0       # optional: widgets
-  ros2_msgs_common: ^0.3.0   # optional: nav2, control, markers, diagnostics
+  ros2_client: ^0.4.0        # pure Dart: topics, services, actions, TF
+  ros2_flutter: ^0.4.0       # optional: widgets
+  ros2_msgs_common: ^0.4.0   # optional: nav2, control, markers, diagnostics
 ```
 
 `ros2_client` alone is enough for a console tool, a server, or a CLI. Add
@@ -86,7 +108,13 @@ can catch. Either serve the app over plain http during development, or put TLS
 on the bridge and use `wss://`.
 
 The client compiles cleanly under both `dart compile js` and
-`dart compile wasm`; nothing in it imports `dart:io`.
+`dart compile wasm`; nothing in it imports `dart:io`. Both run against a real
+bridge, services and actions included: see `test/browser/` in `ros2_client`.
+
+Do not offer WebSocket subprotocols (`protocols:`) to a bare rosbridge from a
+browser. The bridge never selects one, and a browser then refuses the
+connection; native platforms do not mind. Put a token in the query instead, or
+see the [reverse proxy guide](reverse_proxy.md).
 
 ### Android and iOS
 

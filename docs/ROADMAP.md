@@ -22,28 +22,76 @@ nobody currently holds it.
 
 **Theme: finish navigating from the app.** What 0.3.0 left: placing a goal
 on the map, the diagnostics panel, and a browser making a service call and
-sending a goal.
+sending a goal. Then, because this machine moved to ROS 2 Lyrical and
+rosbridge 4.2.1, a Lyrical message set and a re-check of everything against a
+bridge two major versions newer.
 
 ### Widgets (`ros2_flutter`)
 
-- [ ] **Goal picker on the map**: press to place, drag to aim, and an
-      `onGoal(PoseStamped)` callback. It sends nothing itself, so
-      `ros2_flutter` keeps depending on `ros2_client` alone; the example shows
-      sending `NavigateToPose` with `ros2_msgs_common`.
-- [ ] **Diagnostics panel**. `DiagnosticArray` lives in `ros2_msgs_common`,
-      the same dependency question the goal picker avoided. Decide before
-      building: take a plain status model and let the app adapt, or decode
-      the few fields it needs without the generated class.
+- [x] **Goal picker on the map**: `RosMapView(onGoal:, goal:)`. Long press
+      to place, drag to aim; the pose is in the map frame, stamped zero. It
+      sends nothing itself, so `ros2_flutter` still depends on `ros2_client`
+      alone. Tested on a panned map, which a test proves would fail with
+      screen coordinates.
+- [x] **Diagnostics panel**: `RosDiagnosticsPanel<T>` with a plain
+      `RosDiagnosticEntry` model, decided 2026-11-25; the app adapts
+      `DiagnosticArray`. Merges per-node reports, marks silent components
+      stale, and subscribes in JSON because rosbridge 4.2.1 drops it in CBOR.
+- [x] **The example's Navigate and Health tabs.** `NavigateToPose` from the
+      map, with progress, cancel, Nav2's reason for an abort and a costmap
+      reset; checked against a real Nav2 with
+      `ros2_msgs_common/example/real_nav_check.dart`, 9/9.
+
+### Messages (`ros2_msgs_common`)
+
+- [x] **Lyrical**, 324 messages under `lyrical/`. It differs from Jazzy on
+      the wire (costmap services, `TransitionEvent`, `PidState`), confirmed
+      against a Lyrical bridge refusing a Jazzy request.
 
 ### Verification
 
-- [ ] **A browser connects to a real bridge**: dart2js and WASM builds of the
-      example against rosbridge 2.0.8, topics, a service and an action.
-      *Topics done 2026-09-23*: both builds of the example, served from a
-      fresh clone into headless Chrome against rosbridge 2.0.8, decode
-      `BatteryState`, `Odometry`, a CBOR `LaserScan` with `inf`/`nan` and a
-      JPEG `CompressedImage`. Still open: a service and an action from the
-      browser, which the example never makes.
+- [x] **A browser makes service calls and sends action goals** against a
+      real bridge, under dart2js and dart2wasm:
+      `ros2_client/test/browser/real_bridge_browser_test.dart`. Both web
+      builds of the example, with every Lyrical class, compile. Topics were
+      done 2026-09-23.
+- [x] **rosbridge 4.2.1 on Lyrical**: bridge 18/18, connection 6/6, link 7/7,
+      tf, map, clock jump. The checks had to learn that the demo types moved
+      (`turtlesim_msgs`, `example_interfaces/String`).
+- [x] **Generating against custom interfaces**, from a throwaway package
+      exercising bounds, `byte`/`char`, defaults, Dart keywords and a message
+      named `Object`. Offline output compiles and round-trips exactly through
+      the bridge and native ROS. It found two online bugs, both fixed:
+      declared defaults dropped (and turned into bogus constants on Jazzy+),
+      and in-use generation dying on every node's `get_type_description`.
+
+### Docs
+
+- [x] **Reverse proxy guide**, `doc/reverse_proxy.md`. The nginx setup was
+      run end to end against rosbridge 4.2.1: the bridge check passes 18/18
+      through it, bad tokens are refused, TLS works, Chrome connects with a
+      query or subprotocol token, and the read timeout is shown to matter.
+      Running it caught a `proxy_pass` that forwarded `/ros` and got a 404.
+      Caddy's is written but not run.
+- [x] READMEs, installation and tutorial brought up to date, and the
+      published READMEs' links made absolute so they work on pub.dev.
+
+### Found, not fixed: rosbridge 4.2.1
+
+None fixable from the client; worth reporting upstream.
+
+- [ ] **CBOR drops messages with a `byte` field** (`'bytes' object has no
+      attribute 'get_fields_and_field_types'`). The client could fall back to
+      JSON for such types automatically; for now it is documented, and the
+      diagnostics panel asks for JSON.
+- [ ] **Bounded strings and `wstring`s cannot pass through**, either way.
+- [ ] **Images are slow or absent**: 640x480 `rgb8` arrives seconds late or
+      not at all while plain ROS gets it at 10 Hz and a 320 KB point cloud
+      streams at 10 Hz. Cause unknown. `real_sensor_check.dart`'s image checks
+      fail here, so camera views are unverified on 4.2.1.
+- [ ] **A browser cannot offer a subprotocol to a bare rosbridge**: the bridge
+      selects none and the browser refuses the connection. The docs said
+      otherwise until 0.4.0; they now recommend the query string.
 
 ## 0.3.0
 
@@ -280,7 +328,7 @@ bundled types excluded still claimed to have written them.
 - An online run against a robot with genuinely custom interfaces; everything
   so far was verified against stock Humble packages
 - ~~`ros2_msgs_common` targets Humble only.~~ Ships Humble and Jazzy sets
-  since 0.3.0; see "Next release: 0.3.0".
+  since 0.3.0; see "0.3.0".
 
 ## v0.3 — Transforms ✅ *shipped*
 
@@ -554,9 +602,9 @@ largest single chunk of work left.
   to the next retry rather than saying "reconnecting" at an operator who
   cannot tell a second from half a minute. Landed early because the example
   app had already hand-rolled a worse version of it.
-- Occupancy grid / map widget with pan, zoom and pose overlay *(0.3.0)*
-- 2D nav goal picker *(0.3.0, as a callback rather than sending the action)*
-- Diagnostics panel driven by `diagnostic_msgs` *(0.3.0)*
+- ✅ Occupancy grid / map widget with pan, zoom and pose overlay *(0.3.0)*
+- ✅ 2D nav goal picker *(0.4.0, as a callback rather than sending the action)*
+- ✅ Diagnostics panel driven by `diagnostic_msgs` *(0.4.0)*
 - Robot model view from `/robot_description` (URDF parse + 2D footprint first;
   3D is a much larger commitment)
 - Riverpod and Bloc integration examples — not dependencies
@@ -581,12 +629,14 @@ largest single chunk of work left.
   operations: [...]` on the robot's own console and returns the client
   nothing — the same invisible-failure shape as `set_level`. So anything
   authenticating a ROS 2 bridge is in front of it, and the client's job is to
-  carry a credential there: `Ros2Client(protocols: [...])` for the one
-  handshake header a browser can set, or the URI query. Verified against
-  2.0.7, which selects no subprotocol and accepts the connection anyway.
-- A documented reverse-proxy setup is still owed.
-- Web support verified *at runtime* in a browser. Compile-time is done, under
-  both dart2js and WASM.
+  carry a credential there: the URI query, which works everywhere, or
+  `Ros2Client(protocols: [...])` for a proxy that selects one. rosbridge
+  selects no subprotocol: native clients connect anyway (2.0.7), but a
+  browser refuses the connection (Chrome, 4.2.1, measured in 0.4.0).
+- ✅ A documented reverse-proxy setup (`doc/reverse_proxy.md`, 0.4.0),
+  verified through nginx; Caddy's not yet run.
+- ✅ Web support verified *at runtime* in a browser, under dart2js and WASM:
+  topics (0.3.0), and services and actions (0.4.0).
 - Reconnect/offline semantics documented with a state diagram
 - API frozen; semver discipline from here
 - A real reference app published to the stores driving an actual robot
@@ -595,7 +645,7 @@ largest single chunk of work left.
 
 ## Publishing
 
-0.2.0 is on pub.dev, all three packages, published 2026-09-16.
+0.3.0 is on pub.dev, all three packages, published 2026-10-13.
 
 - ✅ Repository URL set in all three pubspecs.
 - ✅ `LICENSE` present (BSD-3-Clause, matching ROS convention).
