@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+**Verified against rosbridge 4.2.1 on ROS 2 Lyrical**, a major version past
+the 2.0.8 every earlier claim was checked against. The client needed no
+change: the bridge check passes 18/18, connection 6/6, link-under-stress 7/7,
+and tf, map and sim-clock jumps all pass. Three bridge bugs were found on the
+way, none fixable from the client, all failing silently:
+
+* Any message with a `byte` field is dropped when subscribed in CBOR; JSON
+  works. `diagnostic_msgs/DiagnosticStatus.level` is a `byte`, so every
+  `/diagnostics` subscription made with the client's CBOR default receives
+  nothing. `ros2_flutter`'s diagnostics panel subscribes in JSON for this.
+* A message with a bounded string (`string<=N`) or a `wstring` can be neither
+  published nor received through the bridge, in either encoding.
+* A 640x480 image arrives seconds late or not at all while a 320 KB point
+  cloud streams at 10 Hz, and plain ROS receives the same images at 10 Hz.
+  Cause not yet found; camera views on Lyrical are unverified.
+
+`example/real_bridge_check.dart` and `real_link_check.dart` now ask the robot
+for its demo types: since Kilted turtlesim's live in `turtlesim_msgs` and the
+demo talker publishes `example_interfaces/msg/String`, and the old names were
+accepted and then delivered nothing. `real_sensor_check.dart` checks
+reassembly on the point cloud, so it measures fragmentation rather than the
+image throughput above.
+
+**A browser making service calls and action goals**, under dart2js and
+dart2wasm, is now a test: `test/browser/real_bridge_browser_test.dart`, skipped
+unless asked for (`dart test -p chrome --run-skipped -t real-bridge`). Both
+compilers pass against rosbridge 4.2.1, including a sum past 2^31, a missing
+service failing rather than hanging, and a cancelled goal.
+
+**Fixed**
+
+* `generate --from-robot` dropped every declared field default, so a goal's
+  `uint8 attempts 3` was generated as `0` and sent as `0` by every goal left
+  at its default. On Jazzy and later it also emitted each default as a bogus
+  constant (`attemptsDefault`). rosapi lists a field's declared default as a
+  `<FIELD>__DEFAULT` "constant", holding a Python repr; these are now read as
+  the field's default, so an online run generates the same code as an
+  offline one, which a test pins for every shape of default. `byte`
+  defaults, which Python holds as bytes (`b'\x03'`), are decoded. A default
+  whose repr cannot be read reliably fails the run, naming `--search`: among
+  them a fixed float array numpy printed at its 8-digit limit, which may have
+  been rounded.
+* `generate --from-robot` with no packages named could not finish on any
+  Jazzy or Lyrical robot. Every node there serves `~/get_type_description`,
+  whose bounded strings crash rosapi when it is asked to describe them, so
+  the run stopped before reaching any type the app uses. It now leaves out
+  the services every node offers (`type_description_interfaces` and
+  `rcl_interfaces`) as it already left out rosapi's. Against a robot running
+  Nav2 it now generates 109 messages that compile, where it stopped after
+  one.
+
 ## 0.3.0
 
 **Fixed**
@@ -102,9 +155,10 @@
   imported its library, and one beyond int64 did not compile at all. Such
   constants are now parsed at runtime.
 
-* `TfBuffer` froze when sim time went back, as it does on every Gazebo
-  restart. Each new sample was older than the cache window measured from the
-  stale newest one, so it was trimmed on arrival, and lookups kept answering
+* `TfBuffer` froze when sim time went back by more than `cacheTime`, as it
+  does on a Gazebo restart after the first few seconds (a smaller jump back is
+  the three-sample case above). Each new sample was older than the cache
+  window measured from the stale newest one, so it was trimmed on arrival, and lookups kept answering
   the pose from before the restart with no error. A clock jump back is now
   handled like a jump forward already was: one outlier is ignored, and ten in
   a row re-baseline the frame onto the new clock. Verified against rosbridge

@@ -58,11 +58,18 @@ Future<void> main(List<String> args) async {
 
   // --- a second listener must not make the bridge deliver anything twice
   final first = <String>[], second = <String>[];
-  final subA = ros.subscribe<StringMsg>('/chatter').listen((m) {
+  // Since Kilted the demo talker publishes example_interfaces/String; under
+  // the wrong name the bridge accepts the subscription and delivers nothing.
+  final chatter = MessageCodec<StringMsg>(
+    rosType: await ros.topicType('/chatter') ?? 'std_msgs/msg/String',
+    fromJson: StringMsg.fromJson,
+    toJson: (m) => m.toJson(),
+  );
+  final subA = ros.subscribe<StringMsg>('/chatter', codec: chatter).listen((m) {
     first.add(m.data);
   });
   await Future<void>.delayed(const Duration(milliseconds: 2500));
-  final subB = ros.subscribe<StringMsg>('/chatter').listen((m) {
+  final subB = ros.subscribe<StringMsg>('/chatter', codec: chatter).listen((m) {
     second.add(m.data);
   });
   await Future<void>.delayed(const Duration(seconds: 4));

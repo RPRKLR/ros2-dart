@@ -2,6 +2,8 @@
 // rosapi 2.0.7 on ROS 2 Humble. The quirks they pin — IDL primitive spellings,
 // field names reported as constants, SLOT_TYPES — are all real.
 import 'package:ros2_client/src/codegen/interface_def.dart';
+import 'package:ros2_client/src/codegen/interface_parser.dart';
+import 'package:ros2_client/src/codegen/library_writer.dart';
 import 'package:ros2_client/src/codegen/typedef_parser.dart';
 import 'package:test/test.dart';
 
@@ -75,6 +77,78 @@ const markerTypedef = {
     '0',
     '[]',
     '0',
+  ],
+};
+
+/// The `.msg` [defaultsTypedef] was captured from.
+const defaultsMsg = '''
+float32[3] xyz [0.5, 1.5, 2.5]
+int32[] codes [1, 2, 3]
+string name "m1"
+bool on true
+uint8 attempts 3
+float64 gain -0.25
+string[] tags ["a", "b"]
+int64 big 9007199254740993
+float64 plain
+''';
+
+/// `get_typedef` for [defaultsMsg], captured from rosapi 4.2.1 on Lyrical
+/// (SLOT_TYPES trimmed). Each field with a declared default gets a
+/// `<FIELD>__DEFAULT` entry holding a Python repr, in a different shape per
+/// kind; `plain` declares none and gets none.
+const defaultsTypedef = {
+  'type': 'demo_robot_msgs/Defaults',
+  'fieldnames': [
+    'xyz', 'codes', 'name', 'on', 'attempts', 'gain', 'tags', 'big', 'plain' //
+  ],
+  'fieldtypes': [
+    'float', 'int32', 'string', 'boolean', 'uint8', 'double', 'string', //
+    'int64', 'double',
+  ],
+  'fieldarraylen': [3, 0, -1, -1, -1, -1, 0, -1, -1],
+  'examples': [
+    '[]', '[]', 'm1', 'True', '3', '-0.25', '[]', '9007199254740993', '0.0' //
+  ],
+  'constnames': [
+    'ATTEMPTS__DEFAULT',
+    'BIG__DEFAULT',
+    'CODES__DEFAULT',
+    'GAIN__DEFAULT',
+    'NAME__DEFAULT',
+    'ON__DEFAULT',
+    'SLOT_TYPES',
+    'TAGS__DEFAULT',
+    'XYZ__DEFAULT',
+    'attempts',
+    'big',
+    'codes',
+    'gain',
+    'name',
+    'on',
+    'plain',
+    'tags',
+    'xyz',
+  ],
+  'constvalues': [
+    '3',
+    '9007199254740993',
+    "array('i', [1, 2, 3])",
+    '-0.25',
+    'm1',
+    'True',
+    '(<rosidl_parser.definition.Array object at 0x7f>,)',
+    "['a', 'b']",
+    '[0.5 1.5 2.5]',
+    '3',
+    '9007199254740993',
+    "array('i', [1, 2, 3])",
+    '-0.25',
+    'm1',
+    'True',
+    '0.0',
+    "['a', 'b']",
+    '[0.5 1.5 2.5]',
   ],
 };
 
@@ -191,6 +265,113 @@ void main() {
       expect(TypedefParser.inferConstantType('True'), 'bool');
       expect(TypedefParser.inferConstantType('False'), 'bool');
       expect(TypedefParser.inferConstantType('warn'), 'string');
+    });
+  });
+
+  group('declared defaults (rosapi 4.x)', () {
+    test('a field default is a default, not a constant', () {
+      final defaults = parse(defaultsTypedef);
+      // Listed as ATTEMPTS__DEFAULT and friends, these became constants such
+      // as `attemptsDefault`, while the fields themselves defaulted to zero.
+      expect(defaults.constants, isEmpty);
+      final byName = {for (final f in defaults.fields) f.name: f.defaultValue};
+      expect(byName, {
+        'xyz': '[0.5, 1.5, 2.5]',
+        'codes': '[1, 2, 3]',
+        'name': '"m1"',
+        'on': 'True',
+        'attempts': '3',
+        'gain': '-0.25',
+        'tags': "['a', 'b']",
+        'big': '9007199254740993',
+        'plain': null,
+      });
+    });
+
+    test('generates the same code as the .msg it came from', () {
+      String emit(MessageDef m) =>
+          LibraryWriter(package: 'demo_robot_msgs', messages: [m]).write();
+      final offline = InterfaceParser.parseMessage(defaultsMsg,
+          package: 'demo_robot_msgs', name: 'Defaults');
+      final online = emit(parse(defaultsTypedef));
+      expect(online, emit(offline));
+      expect(online, contains('this.attempts = 3'));
+    });
+
+    test('reads each repr shape rosapi uses', () {
+      String read(String type, String python, {bool isArray = false}) =>
+          TypedefParser.msgDefault('demo/T', 'f', type, python,
+              isArray: isArray);
+      expect(
+          read('float64', '[0.  1.5 2. ]', isArray: true), '[0.0, 1.5, 2.0]');
+      expect(read('float64', '[1.e-03 2.5e+00]', isArray: true),
+          '[1.0e-03, 2.5e+00]');
+      expect(read('bool', '[ True False]', isArray: true), '[True, False]');
+      expect(read('float64', "array('d')", isArray: true), '[]');
+      expect(read('string', "['a b.']", isArray: true), "['a b.']");
+      // A string that happens to be quoted keeps its quotes.
+      expect(read('string', '"quoted"'), '""quoted""');
+    });
+
+    // Verbatim str() of rosidl's Python defaults on Lyrical, for
+    // `byte mode 3`, `byte[] raw [1, 2]`, `float64[2] k [0.123456789012, 1.0]`,
+    // `float64[] dyn [0.123456789012]` and `string sep " | "`.
+    test('decodes byte defaults, which Python holds as bytes', () {
+      String read(String python, {bool isArray = false}) =>
+          TypedefParser.msgDefault('demo/Edge', 'f', 'byte', python,
+              isArray: isArray);
+      expect(read(r"b'\x03'"), '3');
+      expect(read(r"[b'\x01', b'\x02']", isArray: true), '[1, 2]');
+      // 0x2c is a comma, and 0x27 a quote; neither may split the list.
+      expect(read(r"""[b',', b"'", b'A']""", isArray: true), '[44, 39, 65]');
+      expect(() => read('3'), throwsA(isA<TypedefException>()));
+    });
+
+    test('refuses a fixed float array numpy may have rounded', () {
+      // numpy prints at most 8 significant digits.
+      expect(
+          () => TypedefParser.msgDefault(
+              'demo/Edge', 'k', 'float64', '[0.12345679 1.        ]',
+              isArray: true),
+          throwsA(isA<TypedefException>()));
+      // Fewer digits were printed exactly.
+      expect(
+          TypedefParser.msgDefault('demo/Edge', 'h', 'float64', '[0.5  0.25]',
+              isArray: true),
+          '[0.5, 0.25]');
+      // An unbounded array keeps full precision.
+      expect(
+          TypedefParser.msgDefault(
+              'demo/Edge', 'dyn', 'float64', "array('d', [0.123456789012])",
+              isArray: true),
+          '[0.123456789012]');
+      // Integers are printed exactly however long.
+      expect(
+          TypedefParser.msgDefault(
+              'demo/Edge', 'i', 'int64', '[123456789012 2]',
+              isArray: true),
+          '[123456789012, 2]');
+    });
+
+    test('keeps the whitespace of a string default', () {
+      expect(
+          TypedefParser.msgDefault('demo/Edge', 'sep', 'string', ' | ',
+              isArray: false),
+          '" | "');
+    });
+
+    test('refuses what it cannot read rather than guessing', () {
+      // numpy elides arrays longer than its print threshold.
+      expect(
+          () => TypedefParser.msgDefault(
+              'demo/T', 'f', 'float64', '[0. 0. 0. ... 0. 0. 0.]',
+              isArray: true),
+          throwsA(isA<TypedefException>()
+              .having((e) => e.message, 'message', contains('--search'))));
+      expect(
+          () => TypedefParser.msgDefault('demo/T', 'f', 'uint8', r"b'\x01\x02'",
+              isArray: true),
+          throwsA(isA<TypedefException>()));
     });
   });
 

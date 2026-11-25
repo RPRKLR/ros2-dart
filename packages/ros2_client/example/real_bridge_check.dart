@@ -33,14 +33,6 @@ void expect(bool condition, String message) {
 Future<void> main(List<String> args) async {
   registerStandardMessages();
 
-  // turtlesim's Pose is not a standard message, so register it by hand — this
-  // also exercises the custom-message path end to end.
-  MessageRegistry.register(const MessageCodec<TurtlePose>(
-    rosType: 'turtlesim/msg/Pose',
-    fromJson: TurtlePose.fromJson,
-    toJson: TurtlePose.encode,
-  ));
-
   final uri = Uri.parse(args.isNotEmpty ? args.first : 'ws://127.0.0.1:9090');
   final ros = Ros2Client(uri);
   final statuses = <RosStatus>[];
@@ -49,18 +41,47 @@ Future<void> main(List<String> args) async {
   await ros.connect();
   print('Connected to $uri\n');
 
+  // The demo types moved between distros: since Kilted turtlesim's live in
+  // turtlesim_msgs, and the demo talker publishes example_interfaces/String.
+  // Subscribing under the old name is accepted and then delivers nothing, so
+  // ask the robot rather than assume.
+  final poseType = await ros.topicType('/turtle1/pose') ?? 'turtlesim/msg/Pose';
+  final chatterType = await ros.topicType('/chatter') ?? 'std_msgs/msg/String';
+  final turtlePackage = poseType.split('/').first;
+  print('Robot types: $poseType, $chatterType\n');
+
+  // turtlesim's Pose is not a standard message, so register it by hand — this
+  // also exercises the custom-message path end to end.
+  MessageRegistry.register(MessageCodec<TurtlePose>(
+    rosType: poseType,
+    fromJson: TurtlePose.fromJson,
+    toJson: TurtlePose.encode,
+  ));
+  // The same fields as std_msgs/String, under whichever name the talker uses.
+  final chatter = MessageCodec<StringMsg>(
+    rosType: chatterType,
+    fromJson: StringMsg.fromJson,
+    toJson: (m) => m.toJson(),
+  );
+
   await check('introspection: topics include turtlesim + talker', () async {
     final topics = await ros.listTopics();
     final names = topics.map((t) => t.name).toSet();
     expect(names.contains('/turtle1/pose'), 'missing /turtle1/pose');
     expect(names.contains('/chatter'), 'missing /chatter');
     final pose = topics.firstWhere((t) => t.name == '/turtle1/pose');
-    expect(pose.type == 'turtlesim/msg/Pose', 'wrong type ${pose.type}');
+    expect(
+        const {'turtlesim/msg/Pose', 'turtlesim_msgs/msg/Pose'}
+            .contains(pose.type),
+        'wrong type ${pose.type}');
   });
 
   await check('introspection: topicType()', () async {
     final type = await ros.topicType('/chatter');
-    expect(type == 'std_msgs/msg/String', 'got $type');
+    expect(
+        const {'std_msgs/msg/String', 'example_interfaces/msg/String'}
+            .contains(type),
+        'got $type');
   });
 
   await check('introspection: nodes', () async {
@@ -81,7 +102,8 @@ Future<void> main(List<String> args) async {
   });
 
   await check('subscribe: typed std_msgs/String from talker', () async {
-    final msg = await ros.subscribe<StringMsg>('/chatter').first;
+    final msg =
+        await ros.subscribe<StringMsg>('/chatter', codec: chatter).first;
     expect(msg.data.contains('Hello World'), 'got "${msg.data}"');
   });
 
@@ -124,7 +146,7 @@ Future<void> main(List<String> args) async {
 
   await check('action: rotate_absolute with feedback and result', () async {
     final codec = ActionCodec<double, double, double>(
-      actionType: 'turtlesim/action/RotateAbsolute',
+      actionType: '$turtlePackage/action/RotateAbsolute',
       encodeGoal: (theta) => {'theta': theta},
       decodeFeedback: (json) => (json['remaining'] as num?)?.toDouble() ?? 0,
       decodeResult: (json) => (json['delta'] as num?)?.toDouble() ?? 0,
@@ -184,7 +206,8 @@ Future<void> main(List<String> args) async {
 
   await check('QoS: best-effort subscription still delivers', () async {
     final msg = await ros
-        .subscribe<StringMsg>('/chatter', qos: QosProfile.sensorData)
+        .subscribe<StringMsg>('/chatter',
+            qos: QosProfile.sensorData, codec: chatter)
         .first;
     expect(msg.data.isNotEmpty, 'empty message');
   });
@@ -192,7 +215,7 @@ Future<void> main(List<String> args) async {
   await check('throttle_rate is honoured by the bridge', () async {
     final received = <DateTime>[];
     final sub = ros
-        .subscribe<StringMsg>('/chatter', throttleRate: 2000)
+        .subscribe<StringMsg>('/chatter', throttleRate: 2000, codec: chatter)
         .listen((_) => received.add(DateTime.now()));
     await Future<void>.delayed(const Duration(seconds: 5));
     await sub.cancel();
@@ -228,7 +251,7 @@ final class TurtlePose implements RosMessage {
   final double x, y, theta;
 
   @override
-  String get rosType => 'turtlesim/msg/Pose';
+  String get rosType => MessageRegistry.of<TurtlePose>().rosType;
 
   @override
   Map<String, Object?> toJson() => encode(this);

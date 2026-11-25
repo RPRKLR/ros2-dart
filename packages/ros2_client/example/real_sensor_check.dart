@@ -109,31 +109,38 @@ Future<void> _scan(Ros2Client ros) async {
 }
 
 Future<void> _fragmentation(Ros2Client ros) async {
-  // A 1.2 MB base64 image at 64 KB a fragment is about twenty parts, so this
-  // exercises reassembly properly rather than the two-fragment case.
+  // A 320 KB point cloud, about 430 KB as base64 JSON, at 16 KB a fragment is
+  // some thirty parts, so this exercises reassembly properly rather than the
+  // two-fragment case. It used the 640x480 image until rosbridge 4.2.1 on
+  // Lyrical took seconds to deliver even one unfragmented image here, which
+  // measures the bridge's image throughput, not reassembly.
   final watch = Stopwatch()..start();
   var reassembled = false;
   var exact = false;
   try {
-    final image = await _first(ros.subscribe<RosImage>('/camera/image_raw',
+    final msg = await _first(ros.subscribeJson('/points',
         qos: QosProfile.sensorData,
         compression: Compression.none,
-        fragmentSize: 65536));
-    reassembled = image.data.length == width * height * 3;
-    exact = true;
-    for (var i = 0; i < image.data.length; i++) {
-      if (image.data[i] != (i * 7 + 13) % 256) {
-        exact = false;
-        break;
+        fragmentSize: 16384));
+    // Over JSON, rosbridge sends uint8[] as base64.
+    final data = Field.asBytes(msg['data']);
+    reassembled = data.length == cloudPoints * 16;
+    if (reassembled) {
+      exact = true;
+      for (var i = 0; i < data.length; i++) {
+        if (data[i] != (i * 3 + 1) % 256) {
+          exact = false;
+          break;
+        }
       }
     }
   } on TimeoutException {
     reassembled = false;
   }
   watch.stop();
-  check('fragmented JSON image reassembles', reassembled,
+  check('fragmented JSON point cloud reassembles', reassembled,
       '${watch.elapsedMilliseconds} ms');
-  check('fragmented JSON image is byte-exact', exact);
+  check('fragmented JSON point cloud is byte-exact', exact);
 
   // rosbridge cannot fragment CBOR: it re-serialises the encoded payload with
   // json.dumps, fails with "reject_bytes is on", and delivers nothing while

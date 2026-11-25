@@ -148,4 +148,24 @@ void main() {
     expect(harvest.problems, hasLength(2));
     expect(harvest.problems.first, contains('no request definition'));
   });
+
+  test('leaves out the services every node and the bridge offer', () {
+    for (final plumbing in [
+      'type_description_interfaces/srv/GetTypeDescription',
+      'rcl_interfaces/srv/DescribeParameters',
+      'rcl_interfaces/srv/SetLoggerLevels',
+      'rosapi_msgs/srv/Topics',
+      '',
+    ]) {
+      expect(TypedefHarvest.isPlumbingService(plumbing), isTrue,
+          reason: plumbing);
+    }
+    for (final app in [
+      'nav2_msgs/srv/ClearEntireCostmap',
+      'std_srvs/srv/Trigger',
+      'example_interfaces/srv/AddTwoInts',
+    ]) {
+      expect(TypedefHarvest.isPlumbingService(app), isFalse, reason: app);
+    }
+  });
 }

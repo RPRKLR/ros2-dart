@@ -6,7 +6,7 @@ Talks to a robot through [`rosbridge_suite`](https://github.com/RobotWebTools/ro
 over a single WebSocket, so it runs everywhere Dart runs — Android, iOS, Linux,
 macOS, Windows and the browser — with **no ROS installation on the client**.
 
-**[Installation](../../doc/installation.md) · [Tutorial](../../doc/tutorial.md)**
+**[Installation](https://github.com/RPRKLR/ros2-dart/blob/main/doc/installation.md) · [Tutorial](https://github.com/RPRKLR/ros2-dart/blob/main/doc/tutorial.md)**
 
 ```dart
 final ros = Ros2Client(Uri.parse('ws://192.168.1.10:9090'));
@@ -40,7 +40,7 @@ maps around. This one aims at the gaps that actually bite in production:
 On the robot:
 
 ```bash
-sudo apt install ros-humble-rosbridge-suite
+sudo apt install ros-${ROS_DISTRO}-rosbridge-suite   # humble, jazzy, lyrical
 ros2 launch rosbridge_server rosbridge_websocket_launch.xml
 ```
 
@@ -290,15 +290,22 @@ terminates TLS and proxies the WebSocket — and this client's job is only to
 carry it there:
 
 ```dart
-// A subprotocol is the only handshake header a browser can set.
-final ros = Ros2Client(uri, protocols: ['rosbridge.v1', 'token.$token']);
-
-// Or in the query, if the proxy reads it there.
+// In the query: works from every platform, through a proxy or straight to
+// the bridge, which ignores it.
 final ros = Ros2Client(uri.replace(queryParameters: {'token': token}));
+
+// As a subprotocol, the one handshake header a browser can set. Only when
+// the proxy answers by selecting one: see below.
+final ros = Ros2Client(uri, protocols: ['token.$token']);
 ```
 
-Verified against rosbridge 2.0.7: a handshake offering subprotocols is
-accepted, the bridge selects none, and traffic flows normally.
+rosbridge never selects a subprotocol. Native platforms do not mind: against
+rosbridge 2.0.7 a handshake offering one is accepted and traffic flows. **A
+browser does mind**, and refuses the connection: measured in Chrome against
+rosbridge 4.2.1, a client offering a subprotocol never connects while the same
+token in the query does. So offer subprotocols from the web only to a proxy
+that selects one. [The reverse proxy guide](https://github.com/RPRKLR/ros2-dart/blob/main/doc/reverse_proxy.md) has a
+proxy setup for both.
 
 ## Code generation
 
@@ -306,7 +313,7 @@ Generate Dart classes for any ROS package's `.msg`, `.srv` and `.action`
 definitions, including your own:
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/$ROS_DISTRO/setup.bash
 dart run ros2_client:generate -o lib/msgs sensor_msgs nav2_msgs my_robot_msgs
 ```
 
@@ -413,7 +420,14 @@ name `"T, N"` and then either raises internally or reports that as the type —
 this. The generator refuses to emit a class named after a bound, names the
 offending field, and lists any type that was referenced but not generated, so
 a broken build is reported rather than shipped. Generate those packages from
-source with `--search`.
+source with `--search`. On rosbridge 2.0.8 and 4.2.1 alike, asking also
+crashes the robot's `rosapi` node; the generator notices, keeps what it has,
+and stops rather than waiting out every remaining type.
+
+With no packages named, `--from-robot` generates the types the robot is using,
+and leaves out the services every node offers — type description, parameters
+and logging — whose bounded types would otherwise stop the run on its first
+node.
 
 Two other things the online path has to correct for, both verified against
 rosapi 2.0.7 on Humble:
@@ -426,6 +440,11 @@ rosapi 2.0.7 on Humble:
     so it returns every field name with its default value, plus `SLOT_TYPES`,
     whose value is a Python repr containing a memory address. Only names that
     are not fields survive.
+  * on Jazzy and later the same list carries a `<FIELD>__DEFAULT` entry for
+    each declared default, as a Python repr whose shape depends on the type
+    (`array('i', [1, 2, 3])`, a numpy `[0.5 1.5 2.5]`, a bare `m1`). These
+    become the fields' defaults, so online and offline runs generate the same
+    code; verified against rosapi 4.2.1 on Lyrical.
 
 ## Hand-written messages
 
@@ -464,6 +483,10 @@ MessageRegistry.register(const MessageCodec<Waypoint>(
 ```bash
 dart test                    # unit tests, no ROS needed
 dart test -t integration     # end-to-end against a local WebSocket server
+
+# In a browser, against a live bridge (see test/browser/):
+dart test -p chrome --run-skipped -t real-bridge
+dart test -p chrome --compiler dart2wasm --run-skipped -t real-bridge
 ```
 
 ## Transforms (tf2)
@@ -659,14 +682,33 @@ Jazzy alike, and current rosbridge lists every parameter without it.
 
 ## Verified against a real robot
 
-Tested against `rosbridge_suite` 2.0.7 on ROS 2 Humble with turtlesim:
-16/16 checks pass, covering introspection, typed and custom messages,
-publishing, services, actions with feedback, parameters, QoS and throttling.
+`example/real_*_check.dart` run against a real `rosbridge_suite`, with the
+fixtures in `tool/robot_fixtures/`. Most recently against **rosbridge 4.2.1 on
+ROS 2 Lyrical**: the bridge check 18/18 (introspection, typed and custom
+messages, publishing, services, actions with feedback, parameters, QoS and
+throttling), connection 6/6, a link under stress 7/7, tf, a latched map, sim
+time jumping back, and service calls and action goals from a browser under
+dart2js and dart2wasm. Earlier releases were checked the same way against
+2.0.7 and 2.0.8 on Humble and 2.7.1 on Jazzy.
 
 ```bash
 dart run example/real_bridge_check.dart
 ```
 
+### Known rosbridge 4.2.1 problems
+
+Found on the way, all on the bridge's side and all silent there, with the
+error only on the robot's console:
+
+- **CBOR drops any message with a `byte` field.** `DiagnosticStatus.level` is
+  one, so `/diagnostics` in CBOR, the client's default, delivers nothing. Ask
+  for `Compression.none` on such topics.
+- **A bounded string (`string<=N`) or a `wstring` cannot pass through the
+  bridge** in either direction or encoding.
+- **640x480 images arrive seconds late or not at all**, while a 320 KB point
+  cloud streams at 10 Hz and plain ROS receives the same images at 10 Hz.
+  Still being investigated; camera views on 4.2.1 are unverified.
+
 ## Status
 
-Pre-1.0; the API may change. See [the roadmap](../../docs/ROADMAP.md).
+Pre-1.0; the API may change. See [the roadmap](https://github.com/RPRKLR/ros2-dart/blob/main/docs/ROADMAP.md).
