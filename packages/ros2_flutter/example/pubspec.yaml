@@ -12,6 +12,8 @@ dependencies:
     sdk: flutter
   ros2_flutter:
     path: ../
+  ros2_msgs_common:
+    path: ../../ros2_msgs_common
 
 dev_dependencies:
   flutter_test:

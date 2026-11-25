@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+Requires `ros2_client` 0.4.0.
+
+**New: a goal picker on `RosMapView`.** Give it `onGoal` and a long press
+places a goal on the map; dragging before letting go aims it, as RViz's
+"2D Goal Pose" does. It is a long press because a plain drag already pans.
+The view sends nothing itself: `onGoal` receives a `PoseStamped` in the map
+frame, stamped zero so tf2 and Nav2 read it as "latest", and the app decides
+what to do with it. `goal` draws one, typically the last pick, while the robot
+drives there. A press with no drag faces away from the robot, as if it drove
+straight there. Picking works on a panned and zoomed map, the goal stays
+where it was pressed if the map is republished mid-press (as SLAM does), the
+preview shows the heading that will be sent, and a press off the map picks
+nothing.
+
+**New: `RosDiagnosticsPanel`**, the robot's health from `/diagnostics`, worst
+first. Each node publishes only its own statuses there, so the panel keeps
+every component it has heard from, replaces each as it reports again, and
+marks one stale once it has been silent for `staleAfter` (5 s): a dead node
+otherwise looks like its last, healthy report. It takes a plain model,
+`RosDiagnosticEntry` and `RosDiagnosticLevel`, so this package still depends
+on `ros2_client` alone; with `ros2_msgs_common` the adapter from
+`DiagnosticArray` is one expression, shown in its documentation. They carry a
+`Ros` prefix because Flutter's foundation library already exports a
+`DiagnosticLevel`.
+
+**The example** now has Navigate and Health tabs: a long press on the map
+sends a Nav2 `NavigateToPose` goal, with progress, cancel, the reason Nav2
+gives when it aborts, and a costmap reset; and the diagnostics panel.
+
+* The pubspec description now mentions `RosMapView`.
+* Still built on `package:flutter/material.dart`, which Flutter 3.50
+  deprecates for `package:material_ui`. The two are separate copies: a
+  `material_ui` widget in an app on `flutter/material.dart` ignores the app's
+  theme and throws "No Material widget found", and the reverse holds too. Most
+  apps are still on `flutter/material.dart`, so this package stays there until
+  they move; the deprecation is silenced import by import, and nothing else
+  is.
+
 ## 0.3.0
 
 Requires `ros2_client` 0.3.0.

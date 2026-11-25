@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+Requires `ros2_client` 0.4.0.
+
+**Lyrical.** A third set, under `package:ros2_msgs_common/lyrical/...` and
+registered with `registerLyricalMessages()`: 324 messages, against Jazzy's
+282, adding `nav_msgs`' services and trajectory types, Nav2's route,
+exclusion-zone and shape services, and `control_msgs`' hardware status and
+wrench trajectories. It is not a superset of Jazzy, and it differs on the
+wire, so use the set your robot runs:
+
+* Every Nav2 costmap-clearing service (`ClearEntireCostmap`,
+  `ClearCostmapAroundRobot` and the rest) takes a `plugins` list where Jazzy's
+  took nothing, and answers `success` instead of an empty response. A Jazzy
+  request is refused by a Lyrical bridge.
+* `lifecycle_msgs/TransitionEvent` renamed `timestamp` to `stamp`.
+* `control_msgs/PidState` dropped its error and term fields for gains, and
+  `nav2_msgs/FollowPath` feedback is now a `TrackingFeedback`.
+* `geometry_msgs/Pose2D`, `nav2_msgs/GetCost` and `nav2_msgs/MissedWaypoint`
+  are gone.
+
+`NavigateToPose`'s goal and result are the same as Jazzy's, so navigating
+needs no change; its feedback adds two tracking errors.
+
 ## 0.3.0
 
 Requires `ros2_client` 0.3.0: the regenerated code uses its new `uint64`

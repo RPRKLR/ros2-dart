@@ -12,6 +12,25 @@ import 'typedef_parser.dart';
 
 /// Accumulates definitions harvested from a live robot.
 final class TypedefHarvest {
+  /// Whether a service type is plumbing every node or the bridge offers,
+  /// rather than one an app talks to, and so is left out when generating the
+  /// types a robot is using.
+  ///
+  /// Since Iron every node serves `~/get_type_description`, whose types have
+  /// bounded strings: asking rosapi 4.2.1 to describe it crashes the rosapi
+  /// node, so on any Jazzy or Lyrical robot an in-use run stopped there,
+  /// before reaching a single type the app uses. Every node's parameter and
+  /// logger services (`rcl_interfaces`) have bounded arrays too and fail the
+  /// same way, and rosapi's own services belong to the bridge. Naming any of
+  /// these packages still generates them.
+  static bool isPlumbingService(String type) {
+    final package = type.split('/').first;
+    return type.isEmpty ||
+        package.startsWith('rosapi') ||
+        const {'type_description_interfaces', 'rcl_interfaces'}
+            .contains(package);
+  }
+
   /// Messages by package, keyed by ROS type so a nested type pulled in by
   /// several roots is only emitted once.
   final Map<String, Map<String, MessageDef>> _messages = {};

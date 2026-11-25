@@ -381,8 +381,7 @@ Future<List<String>> _typesInUse(Ros2Client client) async {
   }
   for (final service in await client.listServices()) {
     final type = await client.serviceType(service);
-    // rosapi's own services are an implementation detail of the bridge.
-    if (type != null && type.isNotEmpty && !type.startsWith('rosapi')) {
+    if (type != null && !TypedefHarvest.isPlumbingService(type)) {
       types.add(type);
     }
   }

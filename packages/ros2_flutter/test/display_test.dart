@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+// Deprecated in Flutter 3.50 for package:material_ui, a separate copy whose
+// widgets lose the theme and Material of apps still on this import.
+// ignore: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ros2_flutter/ros2_flutter.dart';

@@ -198,6 +198,49 @@ Every widget under one `RosConnection` shares a single TF listener, because
 `/tf` runs at 50–200 Hz and a listener per widget would multiply both bridge
 traffic and decode cost by the number of widgets on screen.
 
+### Send the robot somewhere
+
+Give `RosMapView` an `onGoal`, and a long press on the map places a goal;
+drag before letting go to aim it. The map sends nothing itself. With
+`ros2_msgs_common`'s Nav2 classes, for the distro your robot runs:
+
+```dart
+import 'package:ros2_msgs_common/lyrical/nav2_msgs.dart';
+// and registerLyricalMessages() in main()
+
+RosMapView(
+  goal: _goal,
+  onGoal: (pose) async {
+    setState(() => _goal = pose);
+    final nav = RosConnection.of(context).sendGoal<NavigateToPoseGoal,
+        NavigateToPoseFeedback, NavigateToPoseResult>(
+      '/navigate_to_pose', NavigateToPoseGoal(pose: pose));
+    try {
+      await nav.result;
+    } on ActionFailedException catch (e) {
+      // On Jazzy and later an aborted goal says why, e.g. error 204
+      // "Goal Coordinates of (500, 500) was outside bounds".
+      final result = e.result as NavigateToPoseResult?;
+      debugPrint('${e.status.name}: ${result?.errorMsg}');
+    }
+  },
+)
+```
+
+Sending a second goal while one runs is fine: Nav2 preempts the first, which
+then ends as aborted. The example app's Navigate tab does all of this, with
+progress and cancel.
+
+### Is anything broken?
+
+```dart
+RosDiagnosticsPanel<DiagnosticArray>(toEntries: myAdapter)
+```
+
+lists the robot's `/diagnostics`, worst first, and marks a component stale
+when it stops reporting. The adapter from `DiagnosticArray` is in the
+`ros2_flutter` README.
+
 ### Your robot's own message types
 
 No hand-writing required. Generate from source:
@@ -232,6 +275,16 @@ Latched topics like `/map` and `/robot_description` need
 as `null`, so over plain JSON an out-of-range lidar beam and an invalid one are
 indistinguishable. CBOR preserves both, which makes it a correctness choice and
 not only a fast one — and it is the default here for that reason.
+
+**A type name that moved.** Subscribing under a type name the robot does not
+use is accepted, and then delivers nothing. Names do move between distros:
+since Kilted turtlesim's types live in `turtlesim_msgs`, and the demo talker
+publishes `example_interfaces/msg/String`. When a topic stays silent, ask the
+robot what it publishes:
+
+```dart
+print(await ros.topicType('/chatter'));
+```
 
 Listen to `ros.status` while developing. It carries the client's own
 diagnostics: connection errors, dropped fragments, buffer overflows, and

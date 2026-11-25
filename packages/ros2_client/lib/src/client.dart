@@ -147,10 +147,17 @@ final class Ros2Client {
   /// WebSocket subprotocols offered during the handshake.
   ///
   /// rosbridge itself ignores them, so this is not a rosbridge feature: it is
-  /// the one way a browser can put a credential on a WebSocket handshake, and
-  /// the usual way an authenticating reverse proxy in front of a bridge reads
-  /// one. `Sec-WebSocket-Protocol` is the only request header the browser
-  /// WebSocket API lets a page set.
+  /// a way to put a credential on the handshake for an authenticating reverse
+  /// proxy in front of a bridge to read. `Sec-WebSocket-Protocol` is the only
+  /// request header the browser WebSocket API lets a page set.
+  ///
+  /// **In a browser, only offer them to a server that selects one.** A
+  /// browser refuses a handshake whose response selects none of the offered
+  /// subprotocols, and rosbridge never selects one: measured in Chrome
+  /// against rosbridge 4.2.1, a client offering one never connects, while the
+  /// same token in [uri]'s query does. The proxy has to answer with one of
+  /// them. Native platforms do not check, and connect either way. A token in
+  /// the query works everywhere, at the cost of appearing in access logs.
   ///
   /// **rosbridge has no authentication of its own.** The `auth` opcode in the
   /// protocol document is a ROS 1 feature backed by `rosauth`, and it was

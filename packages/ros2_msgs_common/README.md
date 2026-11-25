@@ -3,7 +3,7 @@
 Pre-generated Dart classes for the ROS 2 interface packages a robot UI usually
 needs, so most apps never have to run the generator.
 
-Built on [`ros2_client`](../ros2_client), and designed to *complement* it: the
+Built on [`ros2_client`](https://pub.dev/packages/ros2_client), and designed to *complement* it: the
 core types it already bundles — `Twist`, `Pose`, `PoseStamped`, `LaserScan`,
 `RosImage`, `Header`, `OccupancyGrid` — are **not** duplicated here.
 
@@ -11,18 +11,18 @@ core types it already bundles — `Twist`, `Pose`, `PoseStamped`, `LaserScan`,
 
 ```yaml
 dependencies:
-  ros2_client: ^0.3.0
-  ros2_msgs_common: ^0.3.0
+  ros2_client: ^0.4.0
+  ros2_msgs_common: ^0.4.0
 ```
 
 ```dart
 import 'package:ros2_client/ros2_client.dart';
 import 'package:ros2_msgs_common/ros2_msgs_common.dart';
-import 'package:ros2_msgs_common/jazzy/nav2_msgs.dart';
+import 'package:ros2_msgs_common/lyrical/nav2_msgs.dart';
 
 void main() {
   registerStandardMessages();
-  registerJazzyMessages();
+  registerLyricalMessages();
   runApp(const MyApp());
 }
 ```
@@ -38,8 +38,9 @@ barrel cannot export two `SpeedLimit` classes.
 |---|---|---|
 | Humble | `package:ros2_msgs_common/humble/...` | `registerHumbleMessages()` |
 | Jazzy | `package:ros2_msgs_common/jazzy/...` | `registerJazzyMessages()` |
+| Lyrical | `package:ros2_msgs_common/lyrical/...` | `registerLyricalMessages()` |
 
-**Pick the one your robot runs, and use only that one.** The two disagree on
+**Pick the one your robot runs, and use only that one.** They disagree on
 the wire, and rosbridge is strict about it: a published message carrying a
 field the robot's distro does not define is refused. Among the differences
 that matter to an app:
@@ -53,32 +54,45 @@ that matter to an app:
   in Jazzy, so the Humble class cannot be published to a Jazzy robot.
 - Jazzy adds 61 types, among them docking, GPS waypoints and costmap updates,
   and pulls in `geographic_msgs`.
+- Lyrical's costmap-clearing services take a `plugins` list where Jazzy's take
+  nothing, and answer `success`; a Lyrical bridge refuses the Jazzy request
+  ("does not have a field request"). `lifecycle_msgs/TransitionEvent`
+  renamed `timestamp` to `stamp`, and `PidState` and `FollowPath`'s feedback
+  were reworked.
+- Lyrical adds `nav_msgs`' services and trajectory types, Nav2's route,
+  exclusion-zone and shape services, and `control_msgs`' hardware status, and
+  drops `geometry_msgs/Pose2D`, `nav2_msgs/GetCost` and `MissedWaypoint`.
 
-Both sets register under the same ROS type names, so registering both leaves
+`NavigateToPose`'s goal is the same in all three, so sending one works on any
+of them; only Jazzy and Lyrical say in the result why a navigation failed.
+
+Every set registers under the same ROS type names, so registering both leaves
 whichever ran last. The imports without a distro, such as
 `package:ros2_msgs_common/nav2_msgs.dart`, and `registerCommonMessages()` are
 Humble, as they were before Jazzy was added.
 
 ## What is in it
 
-| Library | Humble | Jazzy | What it covers |
-|---|---|---|---|
-| `nav2_msgs` | 81 | 104 | Nav2: costmaps, behaviour trees, navigation actions; Jazzy adds docking and GPS waypoints |
-| `control_msgs` | 39 | 53 | ros2_control: joint trajectories, gripper commands, PID state |
-| `geometry_msgs` | 25 | 25 | Everything the client does not bundle — `Polygon`, `Accel`, `Wrench`, the covariance-stamped variants |
-| `geographic_msgs` | — | 24 | `GeoPoint`, `GeoPose`, for Jazzy's GPS waypoint following |
-| `std_msgs` | 23 | 23 | The remaining scalar wrappers and `MultiArray` types |
-| `visualization_msgs` | 14 | 14 | `Marker`, `MarkerArray`, `InteractiveMarker` |
-| `lifecycle_msgs` | 12 | 12 | Managed-node states and transitions |
-| `diagnostic_msgs` | 7 | 7 | `DiagnosticArray`, `DiagnosticStatus` |
-| `tf2_msgs` | 6 | 6 | `FrameGraph`, `LookupTransform`, `TF2Error` |
-| `action_msgs` | 5 | 5 | `GoalInfo`, `GoalStatus`, `CancelGoal` |
-| `shape_msgs` | 4 | 4 | `Mesh`, `Plane`, `SolidPrimitive` |
-| `trajectory_msgs` | 4 | 4 | `JointTrajectory` and its points |
-| `unique_identifier_msgs` | 1 | 1 | `UUID` |
+| Library | Humble | Jazzy | Lyrical | What it covers |
+|---|---|---|---|---|
+| `nav2_msgs` | 81 | 104 | 119 | Nav2: costmaps, behaviour trees, navigation actions; Jazzy adds docking and GPS waypoints, Lyrical routes and exclusion zones |
+| `control_msgs` | 39 | 53 | 69 | ros2_control: joint trajectories, gripper commands, PID state; Lyrical adds hardware status |
+| `geometry_msgs` | 25 | 25 | 24 | Everything the client does not bundle — `Polygon`, `Accel`, `Wrench`, the covariance-stamped variants |
+| `geographic_msgs` | — | 24 | 24 | `GeoPoint`, `GeoPose`, for GPS waypoint following |
+| `std_msgs` | 23 | 23 | 23 | The remaining scalar wrappers and `MultiArray` types |
+| `visualization_msgs` | 14 | 14 | 14 | `Marker`, `MarkerArray`, `InteractiveMarker` |
+| `lifecycle_msgs` | 12 | 12 | 12 | Managed-node states and transitions |
+| `nav_msgs` | — | — | 12 | The `nav_msgs` types the client does not bundle: `GetPlan`, `GridCells`, `Trajectory` |
+| `diagnostic_msgs` | 7 | 7 | 7 | `DiagnosticArray`, `DiagnosticStatus` |
+| `tf2_msgs` | 6 | 6 | 6 | `FrameGraph`, `LookupTransform`, `TF2Error` |
+| `action_msgs` | 5 | 5 | 5 | `GoalInfo`, `GoalStatus`, `CancelGoal` |
+| `shape_msgs` | 4 | 4 | 4 | `Mesh`, `Plane`, `SolidPrimitive` |
+| `trajectory_msgs` | 4 | 4 | 4 | `JointTrajectory` and its points |
+| `unique_identifier_msgs` | 1 | 1 | 1 | `UUID` |
 
-221 messages for Humble and 282 for Jazzy, plus their services and actions, in
-about 900 KB of source. An app compiles only the distro it imports.
+221 messages for Humble, 282 for Jazzy and 324 for Lyrical, plus their
+services and actions, in about 1.5 MB of source. An app compiles only the
+distro it imports.
 
 Note that `geometry_msgs` and `std_msgs` here hold only the types
 `ros2_client` does not already provide. `Twist` comes from `ros2_client`;
@@ -99,6 +113,22 @@ dart run example/real_distro_check.dart ws://127.0.0.1:9090
 
 It passes against rosbridge 2.0.8 on Humble and 2.7.1 on Jazzy.
 
+`example/real_nav_check.dart` drives a real Nav2 with the Lyrical classes, the
+way the `ros2_flutter` example's Navigate tab does: a goal with feedback, an
+unreachable goal and the reason Nav2 gives, cancel, preemption, clearing both
+costmaps, a Jazzy request refused, and `/diagnostics`:
+
+```bash
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+ros2 launch nav2_bringup tb3_loopback_simulation_launch.py use_rviz:=False
+# The loopback simulator waits for a pose before Nav2 can come up:
+ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+  "{header: {frame_id: map}, pose: {pose: {position: {x: -2.0, y: -0.5}, orientation: {w: 1.0}}}}"
+dart run example/real_nav_check.dart ws://127.0.0.1:9090
+```
+
+It passes 9/9 against rosbridge 4.2.1 and Nav2 on Lyrical.
+
 ## Regenerating
 
 The output is committed, so nothing here needs a ROS install at build time.
@@ -106,7 +136,7 @@ To pick up a distro's updated definitions or add a package, from an installed
 distro:
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/lyrical/setup.bash   # or humble, or jazzy
 ./tool/regenerate.sh
 ```
 
@@ -122,9 +152,8 @@ afterwards — a distro update can change field types.
 
 ## Provenance
 
-Every type here comes from a stock `ros-humble-*` or `ros-jazzy-*` apt
-package. Nothing from a
-local workspace is included, and `tool/regenerate.sh` pins
+Every type here comes from a stock `ros-humble-*`, `ros-jazzy-*` or
+`ros-lyrical-*` apt package. Nothing from a local workspace is included, and `tool/regenerate.sh` pins
 `AMENT_PREFIX_PATH` to `/opt/ros/$ROS_DISTRO` so it cannot be;
 `regenerate_in_docker.sh` hands it an untouched copy of the official image's.
 
@@ -144,8 +173,8 @@ grep -rhoE "'[a-z0-9_]+/(msg|srv|action)/[A-Za-z0-9_]+'" lib/src/humble/*.dart \
   | xargs -I{} sh -c 'dpkg -S /opt/ros/humble/share/{} 2>/dev/null || echo "{} NOT APT"'
 ```
 
-Generated from ROS 2 Humble's and Jazzy's `.msg`, `.srv` and `.action`
-definitions with `dart run ros2_client:generate`. Those definitions are published by the ROS 2
+Generated from ROS 2 Humble's, Jazzy's and Lyrical's `.msg`, `.srv` and
+`.action` definitions with `dart run ros2_client:generate`. Those definitions are published by the ROS 2
 project under Apache-2.0 (and BSD-3-Clause for some packages); the generated
 Dart, and this package's own code, are BSD-3-Clause. Message semantics, field
 names and constants belong to their upstream authors.
