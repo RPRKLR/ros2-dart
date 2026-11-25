@@ -1,7 +1,19 @@
 # ros2_flutter_example
 
-A robot control panel built with `ros2_flutter`: connection status, battery and
-odometry readouts, a camera view, a lidar plot and a teleop joystick.
+A robot control panel built with `ros2_flutter`, in three tabs:
+
+- **Drive**: connection status, battery and odometry, camera, lidar, the map,
+  and a teleop joystick.
+- **Navigate**: long-press the map to send Nav2 a `NavigateToPose` goal (drag
+  before letting go to aim it), with progress, cancel, the reason Nav2 gives
+  when it gives up, and a costmap reset.
+- **Health**: the robot's `/diagnostics`, worst first.
+
+Navigate and Health use `ros2_msgs_common`'s Lyrical classes. For a Humble or
+Jazzy robot, change the distro in the imports of `lib/navigation.dart` and
+`lib/health.dart` and the `register...Messages()` call in `lib/main.dart`;
+Humble's navigation results do not say why a goal failed, so `describeFailure`
+needs its error-code branch removed there.
 
 Point `lib/main.dart` at your robot — it defaults to `ws://127.0.0.1:9090` —
 and on the robot run:
