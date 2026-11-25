@@ -21,10 +21,11 @@
 /// ```
 ///
 /// **Use one distro per app.** The distros disagree on the wire: Jazzy's
-/// `NavigateToPose` result reports an `error_code` that Humble's lacks, and
-/// rosbridge refuses a published message carrying a field its own distro does
-/// not define. Both sets register under the same ROS type names, so
-/// registering both leaves whichever ran last.
+/// `NavigateToPose` result reports an `error_code` that Humble's lacks,
+/// Lyrical's costmap-clearing services take a `plugins` list where Jazzy's
+/// take nothing, and rosbridge refuses a published message carrying a field
+/// its own distro does not define. Every set registers under the same ROS
+/// type names, so registering two leaves whichever ran last.
 ///
 /// The core types — `Twist`, `Pose`, `LaserScan`, `RosImage`, `Header` — come
 /// from `ros2_client` itself and are **not** duplicated here. The
@@ -34,6 +35,7 @@ library;
 
 import 'src/humble/generated.dart' as humble;
 import 'src/jazzy/generated.dart' as jazzy;
+import 'src/lyrical/generated.dart' as lyrical;
 
 /// Registers every message, service and action in the ROS 2 Humble set, the
 /// types in `package:ros2_msgs_common/humble/...`.
@@ -48,6 +50,13 @@ void registerHumbleMessages() => humble.registerGeneratedMessages();
 /// Call once at startup, after `registerStandardMessages()` and before the
 /// first subscribe, advertise, service call or action goal.
 void registerJazzyMessages() => jazzy.registerGeneratedMessages();
+
+/// Registers every message, service and action in the ROS 2 Lyrical set, the
+/// types in `package:ros2_msgs_common/lyrical/...`.
+///
+/// Call once at startup, after `registerStandardMessages()` and before the
+/// first subscribe, advertise, service call or action goal.
+void registerLyricalMessages() => lyrical.registerGeneratedMessages();
 
 /// Registers the ROS 2 Humble set: the same as [registerHumbleMessages].
 ///
